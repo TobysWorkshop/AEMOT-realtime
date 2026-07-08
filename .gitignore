@@ -1,0 +1,9 @@
+*.csv
+*.txt
+
+
+data/
+build/
+
+.vscode/
+.DS_Store

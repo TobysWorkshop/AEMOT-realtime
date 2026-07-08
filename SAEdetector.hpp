@@ -1,0 +1,82 @@
+#ifndef SAEDETECTOR_HPP
+#define SAEDETECTOR_HPP
+
+#include <eigen3/Eigen/Dense>
+#include <cmath>
+#include "SAE.hpp" 
+// #include "parameters.hpp"
+
+class SAEdetector
+{
+public:
+    // Constructor and initialisation
+    // SAEdetector(const Parameters& params);
+    SAEdetector(int height, int width, int ksize, double alpha, double min_contributions, double min_active_pixels, double detection_threshold, double dt_detection_threshold);
+
+    // SAEdetector(Parameters &params); 
+    SAEdetector();
+    ~SAEdetector();
+    
+    // Functions
+    void addEvent(Eigen::Vector4d e);
+    int performDetection(Eigen::Vector4d e);
+    int performDetection_dt(Eigen::Vector4d e);
+
+
+    // Access the image
+    Eigen::MatrixXd getImage();
+
+    //------------------------------------------//
+    //-----        PUBLIC VARIABLES        -----//
+    //------------------------------------------//
+    double m_t_current = 0;
+
+private:
+    //------------------------------------------//
+    //-----        PRIVATE FUNCTIONS       -----//
+    //------------------------------------------//
+    Eigen::MatrixXd getTimePatch(Eigen::Vector4d e);
+
+
+    // Internal functions
+    void getPatches(Eigen::Vector4d e);
+
+    void computeDirectionRegression(Eigen::Vector4d e);
+    int compareDirectionRegression(Eigen::Vector4d e);
+
+    //------------------------------------------//
+    //-----       PRIVATE VARIABLES        -----//
+    //------------------------------------------//
+    SurfaceOfActiveEvents* SAE;
+
+    //----- Parameters -----//
+    // Set some default values
+    double m_alpha = 1e-5;
+    double m_min_active_pixels = 5;
+    double m_min_contributions = 2;
+    double m_detection_threshold = 0.7;
+    int m_ksize;
+    double m_dt_detection_threshold = 0;
+
+    //----- Flags -----//
+    bool m_f_patch_status = false;
+    bool m_f_regression_status = false;
+
+
+    int m_width, m_height;
+    Eigen::MatrixXd initialised_events;
+    Eigen::MatrixXd init_events_patch, t_patch;
+
+    Eigen::MatrixXd initialised_directions, init_directions_patch;
+    Eigen::MatrixXd lx, ly;
+    Eigen::MatrixXd lx_patch, ly_patch;
+    
+    // Set up some patches that we will need each iteration
+    // Eigen::VectorXd b;
+    Eigen::VectorXd patch_offset;
+    std::vector<std::pair<int, int>> patch_points;
+    Eigen::Vector<double, 3> no_detection = Eigen::Vector<double, 3> ::Constant(-1);
+    
+};
+
+#endif
