@@ -2,8 +2,8 @@
 #include "rclcpp/rclcpp.hpp"
 
 // Message types for publishing and subscribing to topics
-#include "std_msg/msg/string.hpp"
-#include "event_camera_msg/msg/EventPacket.hpp" //check this formatting
+#include "std_msgs/msg/string.hpp"
+#include "event_camera_msg/msg/event_packet.hpp" //check this formatting
 
 // Event processor for decoding raw event messages
 #include <iostream>
@@ -23,6 +23,10 @@
 #include <filesystem>           
 #include <fstream>               
 #include <iostream>
+#include <iomanip>
+#include <algorithm>
+#include <memory>
+#include <cstdint>
 #include <math.h>
 #include <opencv2/core/core.hpp>     
 #include <opencv2/highgui/highgui.hpp> 
@@ -34,6 +38,7 @@
 
 //// PARAMS
 std::string EVENTS_IN_TOPIC = "/event_camera/events";
+double DISPLAY_HZ = 30.0;
 
 ////////
 
@@ -44,25 +49,15 @@ double TTC, contrast_threshold, first_ts_flag;
 // contrast_threshold = the per-event brightness-change magnitude, used by high_pass()
 // first_ts_flag    = flag: have we seen the first event timestamp yet? (used to zero the clock)
 
-int image_count, image_id, start_event_ts;
+int image_count = 0, image_id = 0, start_event_ts = 0;
 // image_count = counter used for naming saved output images/frames
 // image_id   = index into the reference image timestamp list (for RGB overlay sync)
 
-double t1;                 // First event's raw timestamp, used to zero-base all subsequent timestamps
-double t_next_publish = 0; // Next wall-clock/event-time at which we should refresh the display
-int EventId = 0;           // Running counter of how many event lines have been read
-double ts_kf_last = 0;     // Timestamp of the last Kalman filter update
-double gyro_ts = 0;        // Current gyro sample timestamp
-double gyro_ts_last = 0;   // Previous gyro sample timestamp (for computing gyro_dt)
-double next_save_traj_ts = 0;
-double dt_save_traj = 0.0001; // Sub-sampling interval for saving trajectory (currently unused/legacy)
-double alpha_dist = 1.4;      // Decay rate used to smooth/update the per-track association distance threshold
-bool first_gyro_flag = true;  // Have we processed the first gyro sample yet?
-bool use_gyro_flag;           // Whether gyro fusion is enabled (from config)
+double alpha_dist = 1.4; // Decay rate used to smooth/update the per-track association distance threshold
 
-Eigen::MatrixXd x_hat_track; // Scratch variable: holds the CURRENT track's state vector (reused each loop)
-Eigen::MatrixXd P_track;     // Scratch variable: holds the CURRENT track's state covariance matrix
+bool use_gyro_flag = false;
 
+Eigen::MatrixXd x_hat_track, P_track;
 // Choose two target IDs to compute time-to-contact; default id=0 and id=1
 int id_ttc_left = 0;
 int id_ttc_right = 1;
@@ -72,7 +67,8 @@ cv::Mat log_intensity_state, ts_array;
 // log_intensity_state = per-pixel running "brightness" estimate built from events (the reconstructed image)
 // ts_array            = per-pixel timestamp of the last event seen there (needed for the exponential decay)
 
-// ---- Kalman filter matrices shared across the whole program (set once in init()) ----
+// ---- Kalman filter matrix templates ----
+// built once in EventProcessor::initialise(), then handed to TrackManager (which makes its own per-track copies)
 Eigen::MatrixXd F, C, R, P, Q, A, P_x, x0, x_hat;
 // F  = state transition matrix (predicts next state from current state)
 // C  = measurement/observation matrix
@@ -83,145 +79,195 @@ Eigen::MatrixXd F, C, R, P, Q, A, P_x, x0, x_hat;
 // x0 = initial state vector template (per target)
 // x_hat = working state estimate used mainly during manual target selection (key 'Esc' handler)
 
-std::ofstream output_txt_;
 std::string input_event_path, output_image_path;
 cv::Point selectedPoint(-1, -1);           
 std::vector<cv::Point> selectedPoints;      
 cv::VideoWriter writer_ref, writer;         
 
 double ts_global = 0;
+int EventId = 0;
 
-
-void onMouse(int event, int x, int y, int flags, void *userdata)
-{
-    if (event == cv::EVENT_LBUTTONDOWN)
-    {
-    selectedPoint = cv::Point(x, y);
-    }
-}
-
-// ---- Forward declarations of all functions defined later in this file ----
+// ---- Forward declarations of all free functions defined later in this file ----
 void high_pass(double ts, int x, int y, int p, int &alpha);       
-void high_pass_global(double ts, int &alpha);                      
-void init(Parameters &params);                                     
+void high_pass_global(double ts, int &alpha);                                                       
 void display(const DisplayParams &dispParams, Parameters &params,
              const double &ts, std::vector<cv::Mat> &output_video,
              std::vector<cv::Mat> &output_video_ref,
-             std::vector<double> &image_ref_ts, int p, std::vector<KalmanFilter *> current_tracks); 
-void display_for_select();          
+             std::vector<double> &image_ref_ts, int p, std::vector<KalmanFilter *> current_tracks
+);        
 
-
-
-///////////////// AEB MAIN NODE //////////////////////
-class AEBNode : public rclcpp::Node
-{
-    public:
-        AEBNode() : Node("AEB_node")
-        {
-            //// INIT ////
-
-            // Declare and get parameters
-            this->declare_parameter<std::str>("test_param", "This is a test string!!");
-            this->declare_parameter<double>("test_number", 1.0);
-
-            std::string test_text = this->get_parameter("test_param").as_string();
-            double test_n = this->get_parameter("test_number").as_double()
-
-            // SUBSCRIBERS
-            this->create_subscription<event_camera_msgs::msg::EventPacket>(
-                EVENTS_IN_TOPIC, 
-                10,
-                std::bind(&AEBNode::eventpacket_cb, this, std::placeholders::_1)  
-            );
-
-            // PUBLISHERS
-            status_publisher = this->create_publisher<std_msgs::msg::String>(
-                "/AEB_status",
-                10
-            );
-
-
-            // Log startup message
-            RCLCPP_INFO(this->get_logger(), "AEB Node has started.");
-        }
-
-    private:
-
-        // runs every time we get an event packet
-        void eventpacket_cb(const event_camera_msgs::msg::EventPacket::SharedPtr msg) const
-        {
-            // Retrieve or instantiate the matching decoder instance for this packet type
-            auto decoder = decoderFactory_.getInstance(*msg);
-
-            if (!decoder) {
-                RCLCPP_ERROR(this->get_logger(), "Unknown package encoding: %s", msg->encoding.c_str());
-                return;
-            }
-            
-            // Unpack the compressed event packet array. This sends each unpacked event one by one to the EventProcessor::eventCD callback in the class below
-            decoder->decode(*msg, &processor_);
-
-            RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
-        
-        }
-
-        // Member Variables //
-
-        // ROS2 things
-        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
-        rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscriber_;
-
-        // Event decoder structures
-        event_camera_codecs::DecoderFactory<event_camera_msgs::msg::EventPacket, MyEventProcessor> decoderFactory_;
-        EventProcessor processor_;
-};
 
 
 ////////// EVENT PROCESSOR MODULE //////////////
 class EventProcessor : public event_camera_codecs::EventProcessor {
     public:
+        bool initialise(const std::string &config_name)
+        {
+            // PARSE THE CONFIG //
+            try
+            {
+                std::string file_config_path = "../configs/" + config_name + ".yaml";
+                params = loadParametersFromYAML(file_config_path);
+                dispParams = loadDispParametersFromYAML(file_config_path);
+            }
+            catch (const std::exception &ex)
+            {
+                std::cerr << "Error: " << ex.what() << std::endl;
+                return false; // Fail fast if config is missing/invalid
+            }
+
+            // Allocate the two per-pixel accumulator images used for the event->intensity reconstruction.
+            log_intensity_state = cv::Mat::zeros(params.height, params.width, CV_64FC1);
+            ts_array = cv::Mat::zeros(params.height, params.width, CV_64FC1);
+            use_gyro_flag = params.use_gyro_flag;
+            contrast_threshold = params.contrast_threshold;
+            int n_state = params.n_state;
+            input_event_path = params.input_folder_path + params.input_data_name; // base path (no extension) for this dataset
+
+            // SET UP DISPLAY WINDOW //
+            cv::namedWindow("Video");
+            std::string output_ref_video_path = input_event_path + "_video_ref.avi";
+            std::string output_video_path = input_event_path + "_video.avi";
+            if (params.save_video_flag)
+            {
+                // Opens an .avi writer for the reconstructed event-video (MJPG codec, fixed 40 fps)
+                writer.open(output_video_path,
+                            cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 40.0,
+                            cv::Size(params.width, params.height)
+                );
+
+            }
+
+            // If saving individual frame images was requested, create the output folder.
+            if (params.save_image_flag)
+            {
+                std::filesystem::path path(input_event_path + "/output_img");
+                std::filesystem::create_directories(path);
+                output_image_path = path.string();
+            }
+
+            //blob_measurements_txt_.open(input_event_path + "_measurements.csv");
+
+            // INITALISE SAE-DETECTOR //
+            detector = std::make_unique<SAEdetector>(params.height,
+                                    params.width,
+                                    params.SAE_ksize,
+                                    params.SAE_alpha,
+                                    params.SAE_min_contributions,
+                                    params.SAE_min_active_pixels,
+                                    params.SAE_detection_threshold,
+                                    params.detector_dt_threshold
+            );
+            
+
+            // BUILD THE KALMAN FILTER MATRIX TEMPLATES //
+            int n_target_local = 1;
+            F = Eigen::MatrixXd::Zero(n_target_local * n_state, n_state);
+            C = Eigen::MatrixXd::Zero(3, n_state);        // maps state -> the 3 measured quantities (x, y, ts-related)
+            R = Eigen::MatrixXd::Identity(3, 3);          // measurement noise covariance
+            P = Eigen::MatrixXd::Zero(n_target_local * n_state, n_state); // initial estimate error covariance
+            Q = Eigen::MatrixXd::Zero(n_state, n_state);  // process noise covariance
+            A = Eigen::MatrixXd::Zero(2, 2);              // Sigma^(1/2) - used for shape/orientation estimation elsewhere
+            x0 = Eigen::MatrixXd::Zero(n_target_local, n_state);
+
+            for (int j = 0; j < n_target_local; j++)
+            {
+                for (int i = 0; i < n_state; i++)
+                {
+                    F(j * n_state + i, i) = 1; // start as identity (each state persists by default)
+                }
+                // Constant-velocity coupling: position += velocity * dt
+                F(j * n_state, 2) = params.dt;     // x += vx * dt
+                F(j * n_state + 1, 3) = params.dt; // y += vy * dt
+                F(j * n_state + 6, 7) = params.dt; // theta += angular_velocity * dt
+            }
+
+            Eigen::MatrixXd P_block = Eigen::MatrixXd::Zero(n_state, n_state);
+            x0.block(0, 4, n_target_local, 1).setConstant(params.lambda_init);  // initial size param 1
+            x0.block(0, 8, n_target_local, 2).setConstant(0);                   // initial extra states
+            x0.block(0, 5, n_target_local, 1).setConstant(params.lambda_init);  // initial size param 2
+
+            // Diagonal (uncorrelated) initial covariance, one variance value per state dimension.
+            P_block.diagonal() << params.var_x, params.var_y, params.var_vx,
+                params.var_vy, params.var_lambda_1, params.var_lambda_2, params.var_theta,
+                params.var_q, 50, 50;
+
+            // Diagonal process noise - how much we expect each state to drift/be uncertain per step.
+            Q.diagonal() << params.q_x, params.q_y, params.q_vx, params.q_vy,
+                params.q_lambda_1, params.q_lambda_2, params.q_theta, params.q_q, 5, 5;
+
+            for (int row = 0; row < n_target_local; row++)
+            {
+                P.block(row * n_state, 0, n_state, n_state) << P_block;
+            }
+
+            // SETUP THE TRACK MANAGER //
+            track_manager = std::make_unique<TrackManager>(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state);
+            track_manager->update_default_dist_threshold(params.dist_threshold);
+            track_manager->update_frame_dimensions(params.height, params.width);
+            track_manager->update_event_rate_threshold(params.event_rate_threshold);
+            track_manager->store_parameters(
+                params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
+            );
+
+            // RENDER INITIAL EMPTY FRAME //
+            display(dispParams, params, 0.0, output_video, output_video_ref, image_ref_ts, 0, track_manager->getTracks());
+
+            return true;
+
+        } // end initialise
+
         // This runs every time a decoded event is pulled from the current event packet
-        void eventCD(uint64_t ts, uint16_t c, uint16_t r, uint8_t p) override {
-            // ts = sensor timestamp in nanoseconds
+        void eventCD(uint64_t ts_ns, uint16_t c, uint16_t r, uint8_t p) override {
+            // ts_ns = sensor timestamp in nanoseconds
             // c, r = column, row (pixel coordinates). Annalogous to x and y respectively
             // p = polarity
 
+            std::lock_guard<std::mutex> lock(state_mutex);
             ///// HERE IS WHERE THE PIPELINE FROM THE ORIGINAL MAIN.CPP CODE IS IMPLEMENTED!! /////
+            EventId++;
             
+            if (!have_first_ts) // assign t1 on first event
+            {
+                t1 = static_cast<double>(ts_ns);
+                have_first_ts = true;
+            }
+            // convert ns to seconds
+            double ts = (static_cast<double>(ts_ns) - t1) * 1e-9;
+
             // pack the event into an Eigen vector for downstream Kalman update calls
             e << c, r, ts;
-            if (t_last == -1){
-                t_last = ts; // initialise on first iteration //*
+            if (t_last == -1.0){
+                t_last = ts; // initialise on first iteration
             }
 
             // update the reconstructed-image pixel this event touched
-            high_pass(ts, c, r, p, params.alpha); //*
+            high_pass(ts, c, r, p, params.alpha);
 
             // Whenever the timestamp advances, decide whether the
             // previous time-slot should be marked as "had an associated event" for logging purposes
-            if (ts - t_last > 0){
-                if (f_associated_this_ts){ //*
-                    f_write_position = 1; //*
-                }
-                else {
-                    f_write_position = 0;
-                }
-                f_associated_this_ts = 0; // reset for the new timestamp
+            if (ts - t_last > 0)
+            {
+                f_write_position = f_associated_this_ts;
+                f_associated_this_ts = false;
             }
 
-            bool f_event_associated = 0; // was this specific event matched to an existing track?
+            bool f_event_associated = false; // was this specific event matched to an existing track?
 
             //check if the track manager has any existing tracks its managing
-            if (track_manager.len() > 0) //*
+            if (track_manager->len() > 0)
             {
                 // NEAREST NEIGHBOUR DATA ASSOCIATION //
                 //Find which existing track's predicted position is closest to this event's location
                 double dist_min = 1e6; // a very large starting distance
 
                 // itterate through the track manager's current tracks to find the closest
-                for (int i = 0; i < track_manager.len(); i++)
+                for (int i = 0; i < track_manager->len(); i++)
                 {
-                    x_hat_track = track_manager.getTrack(i)->state();
+                    // * if the track isn't active (just a waiting container), skip it
+                    if (!track_manager->getTrack(i)->active) continue;
+
+                    x_hat_track = track_manager->getTrack(i)->state();
                     distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
 
                     if (distance < dist_min)
@@ -232,10 +278,10 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                 }
 
                 // Pull out the closest track's full state/covarience to check if its feasible to now associate it
-                x_hat_track = track_manager.getTrack(id)->state();
-                P_track = track_manager.getTrack(id)->P_x();
-                double ts_last_for_gamma = track_manager.getTrack(id)->get_ts_last_for_gamma();
-                double dist_threshold_track = track_manager.getTrack(id)->get_dist_threshold();
+                x_hat_track = track_manager->getTrack(id)->state();
+                P_track = track_manager->getTrack(id)->P_x();
+                double ts_last_for_gamma = track_manager->getTrack(id)->get_ts_last_for_gamma();
+                double dist_threshold_track = track_manager->getTrack(id)->get_dist_threshold();
 
                 distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
 
@@ -249,27 +295,27 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
                     if (x_hat_track(4) > x_hat_track(5))
                     {
-                    dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(4);
+                        dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(4);
                     }
                     else
                     {
-                    dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(5);
+                        dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(5);
                     }
 
                     // Never let the gate shrink below the configured minimum.
                     if (dist_threshold_track < params.dist_threshold)
                     {
-                    dist_threshold_track = params.dist_threshold;
+                        dist_threshold_track = params.dist_threshold;
                     }
 
-                    track_manager.getTrack(id)->update_distance_threshold(dist_threshold_track);
+                    track_manager->getTrack(id)->update_distance_threshold(dist_threshold_track);
                 }
 
                 // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
                 if (distance < dist_threshold_track)
                 {
                     f_event_associated = 1; // flag this event as associated! This will mean we skip allocating it as a new target
-                    track_manager.getTrack(id)->update(e, 0, p);
+                    track_manager->getTrack(id)->update(e, 0, p);
                 }
 
             } // end nearest-neighbour data association step
@@ -279,7 +325,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             // AUTO_DETECTION OF NEW TARGETS //
             // If the event did NOT get associated to an existing track, then we treat it as a potential background event or candidate event.
             // And so we must pass it to the SAEdetector to classify it
-            if (f_event_associated == 0) // if the event hasn't been associated yey
+            if (!f_event_associated) // if the event hasn't been associated yet
             {
                 // we add this event to the detector waiting room, ready for the next detection attempt
                 detector->addEvent({(double) c, (double) r, ts, (double) p}); //*
@@ -288,10 +334,12 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             // Only initiate a detection attempt when ALL of the following hold:
             // - this event hasn't been claimed by a track
+            // - the track manager has available tracking slots
             // - we're far enough from existing tracks (or there are no tracks yet)
             // - enough unassociated events have accumulated in the waiting room since the last detection attempt
-            if ((f_event_associated == 0) &
-                (distance > params.detector_dist_threshold || track_manager.len() == 0) &
+            if ((!f_event_associated) &
+                (track_manager->hasAvailableSlots()) & // * 
+                (distance > params.detector_dist_threshold || track_manager->len() == 0) &
                 (detection_event_count > params.SAE_operation_rate))
             {
                 detection_event_count = 0;
@@ -301,7 +349,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                 if (detector_output == 1) // confirmed candidate! Move to start a new track
                 {
                     // ---- NEW KalmanFilter TRACK CREATED HERE (inside TrackManager) ----
-                    track_manager.createNewTrack({(double) c, (double) r, ts});
+                    track_manager->createNewTrack({(double) c, (double) r, ts});
                 }
             }
 
@@ -312,234 +360,183 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
             double_track_evaluation_counter++;
-            if ((track_manager.len() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager.len() > 1)))
+            if ((track_manager->len() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager->len() > 1)))
             {
                 double_track_evaluation_counter = 0;
-                deleted_IDs_temp = track_manager.evaluateDoubleTracks();
+                deleted_IDs_temp = track_manager->evaluateDoubleTracks();
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
                 }
             }
-            // (b) Full evaluation (age/activity/etc.) - runs every event, if enabled.
-            else if ((track_manager.len() > 0) & (params.f_evaluate == 1)){
-                deleted_IDs_temp = track_manager.evaluateTracks(ts);
+            // (b) Full evaluation (age/activity/etc.) - runs only every 100 events, if enabled.
+            else if ((track_manager->len() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100)){
+                deleted_IDs_temp = track_manager->evaluateTracks(ts);
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
                 }
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
-            else if ((track_manager.len() > 0) & (params.f_evaluate == 0)){
-                deleted_IDs_temp = track_manager.evaluateTracksPosition();
+            else if ((track_manager->len() > 0) & (params.f_evaluate == 0)){
+                deleted_IDs_temp = track_manager->evaluateTracksPosition();
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
                 }
             }
 
             // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.
-            if (deleted_IDs.size() > 0) {
+            if (!deleted_IDs.empty()) {
                 while(!same_ts_e_buffer.empty()){
                     same_ts_e_buffer.pop();
                 }
             }
 
             // Log the event if it was associated to a track, in a simple CSV-like format.
-            if (f_event_associated){
-                blob_measurements_txt_ << std::setprecision(0) << std::fixed;
-                blob_measurements_txt_ << c << "," << r << "," << p << "," << int(ts*1e6) << std::endl;
-            }
-
-            // PERIODIC DISPLAY REFRESH
-            // Rather than updating the display every event (which would be way too slow), we update it only
-            // every 'publish_framerate' Hz in the config. This is measured in event-time, not wall-clock time
-            if (params.publish_framerate > 0 && ts > t_next_publish)
-            {
-                std::cout << ts << std::endl;
-                high_pass_global(ts, params.alpha); // decay the WHOLE image up to `ts` (not just one pixel)
-                display(dispParams, params, ts, output_video, output_video_ref,
-                        image_ref_ts, p, track_manager.getTracks());
-
-                t_next_publish = ts + (1.0 / params.publish_framerate);
-            }
+            //if (f_event_associated){
+            //    blob_measurements_txt_ << std::setprecision(0) << std::fixed;
+            //    blob_measurements_txt_ << c << "," << r << "," << p << "," << int(ts*1e6) << std::endl;
+            //}
 
             // BOOKEEPING AFTER EVALUATION //
             // Keep the track id valid if a track was deleted this iteration
-            if (track_manager.len() > 0)
+            if (track_manager->len() > 0)
             {
-            if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
-                bool is_larger = std::all_of(deleted_IDs.begin(), deleted_IDs.end(), [id](int elem) { return id >= elem;});
-                if ((deleted_IDs.size()>0) & (is_larger)){
-                    id--;
+                if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
+                    if (id < track_manager->len()){
+                        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
+                    }
                 }
 
-                if (id < track_manager.len()){
-                    track_manager.getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
-                }
-            }
-
-            ts_kf_last = ts;
+                ts_kf_last = ts;
             }
 
             t_last = ts; // advance the previous timestep marker, ready for the next event to come in!
 
         } // end eventCD() function
 
+        // Seperate threaded function for rendering the display frames
+        void renderFrame()
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+
+            if (!track_manager) return;
+
+            high_pass_global(ts_kf_last_, params_.alpha);
+            display(dispParams, params, ts_kf_last, output_video, output_video_ref,
+                    image_ref_ts, 0, track_manager->getTracks());
+        }
+
+    private:
+        Parameters params;
+        DisplayParams dispParams;
+        std::unique_ptr<TrackManager> track_manager;
+        std::unique_ptr<SAEdetector> detector;
+
+        // per-event state
+        Eigen::Vector3d e = Eigen::Vector3d::Zero();
+        double t1 = 0.0;
+        bool have_first_ts = false;
+        double t_last = -1.0;
+        bool f_associated_this_ts = false;
+        bool f_write_position = false;
+        int double_track_evaluation_counter = 0;
+        int id = 0;
+        double distance = 0.0;
+        double detection_event_count = 0.0;
+        double t_next_publish = 0.0;
+        double ts_kf_last = 0.0;
+
+        std::vector<cv::Mat> output_video;
+        std::vector<cv::Mat> output_video_ref;
+        std::vector<double> image_ref_ts;
+
+        std::mutex state_mutex;
+
+        //std::ofstream blob_measurements_txt_;
+
 }; // end EventProcessor class
 
-//////////////// INIT FUNCTION ///////////////////////
-void init(Parameters &params)
+
+
+///////////////// AEB MAIN NODE //////////////////////
+class AEBNode : public rclcpp::Node
 {
-    // PARSE THE CONFIG //
-    std::string data_name = argv[2];
-    Parameters params; // populated from YAML
-    DisplayParams dispParams;
-
-    try
-    {
-        std::string file_config_path = "../configs/" + data_name + ".yaml";
-        params = loadParametersFromYAML(file_config_path);
-        dispParams = loadDispParametersFromYAML(file_config_path);
-    }
-    catch (const std::exception &ex)
-    {
-        std::cerr << "Error: " << ex.what() << std::endl;
-        return 1; // Fail fast if config is missing/invalid
-    }
-
-    // Allocate the two per-pixel accumulator images used for the event->intensity reconstruction.
-    log_intensity_state = cv::Mat::zeros(params.height, params.width, CV_64FC1);
-    ts_array = cv::Mat::zeros(params.height, params.width, CV_64FC1);
-    use_gyro_flag = params.use_gyro_flag;
-
-    contrast_threshold = params.contrast_threshold;
-    n_target = params.n_target;
-    n_state = params.n_state;
-    input_event_path = params.input_folder_path + params.input_data_name; // base path (no extension) for this dataset
-    std::ofstream track_output_txt_, TTC_txt_, blob_measurements_txt_;    // output file streams (opened conditionally below)
-    double distance = 0;
-    int id = 0;
-
-    // SET UP DISPLAY WINDOW //
-    cv::namedWindow("Video");
-    cv::setMouseCallback("Video", onMouse); // registers onMouse() defined above
-    std::vector<cv::Mat> output_video;
-    std::vector<cv::Mat> output_video_ref;
-    std::string output_ref_video_path = input_event_path + "_video_ref.avi";
-    std::string output_video_path = input_event_path + "_video.avi";
-    if (params.save_video_flag)
-    {
-        // Opens an .avi writer for the reconstructed event-video (MJPG codec, fixed 40 fps)
-        writer.open(output_video_path,
-                    cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 40.0,
-                    cv::Size(params.width, params.height));
-
-        if (params.ref_image_ts_flag)
+    public:
+        AEBNode() : Node("AEB_node")
         {
-            // Second writer for the reference RGB video (note: size is 1px smaller in each dim)
-            writer_ref.open(output_ref_video_path,
-                            cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 40.0,
-                            cv::Size(params.width - 1, params.height - 1));
+            //// INIT ////
+
+            // Declare and get parameters
+            this->declare_parameter<std::string>("config_name", "default");
+
+            std::string config_name = this->get_parameter("config_name").as_string();
+
+            // Processor initialise() must be running before we start subscribing
+            if (!processor.initialise(config_name))
+            {
+                RCLCPP_FATAL(this->get_logger(), "EventProcessor failed to initialise (bad config?)... shutting down.");
+                rclcpp::shutdown();
+                return;
+            }
+
+            // Create a wall-timer for the display refresh
+            display_timer = this->create_wall_timer(
+                std::chrono::duration<double>(1.0 / DISPLAY_HZ),
+                [this]() { processor.renderFrame(); });
+
+            // SUBSCRIBERS
+            event_sub = this->create_subscription<event_camera_msgs::msg::EventPacket>(
+                EVENTS_IN_TOPIC, 10,
+                std::bind(&AEBNode::eventpacket_cb, this, std::placeholders::_1)  
+            );
+
+            // PUBLISHERS
+            status_publisher = this->create_publisher<std_msgs::msg::String>(
+                "/AEB_status", 10
+            );
+
+            // Log startup message
+            RCLCPP_INFO(this->get_logger(), "AEB Node has started.");
         }
-    }
 
-    if (params.ref_image_ts_flag)
-    {
-        cv::namedWindow("Video_ref", cv::WINDOW_NORMAL);
-    }
+    private:
 
-    // If saving individual frame images was requested, create the output folder.
-    if (params.save_image_flag)
-    {
-        std::filesystem::path path(input_event_path + "/output_img");
-        std::filesystem::create_directories(path);
-        output_image_path = path.string();
-    }
-
-    // INITALISE SAEDETECTOR //
-    SAEdetector* detector = nullptr;
-    double detection_event_count = 0;
-
-    detector = new SAEdetector(params.height,
-                               params.width,
-                               params.SAE_ksize,
-                               params.SAE_alpha,
-                               params.SAE_min_contributions,
-                               params.SAE_min_active_pixels,
-                               params.SAE_detection_threshold,
-                               params.detector_dt_threshold
-                            );
-    
-
-    // BUILD THE KALMAN FILTER MATRICIES //
-    int n_target = 1; // NOTE: shadows the global n_target - hardcoded to 1 because these matrices
-                        // describe a SINGLE track's filter; TrackManager makes one copy per target.
-
-    F = Eigen::MatrixXd::Zero(n_target * n_state, n_state);
-    C = Eigen::MatrixXd::Zero(3, n_state);        // maps state -> the 3 measured quantities (x, y, ts-related)
-    R = Eigen::MatrixXd::Identity(3, 3);          // measurement noise covariance
-    P = Eigen::MatrixXd::Zero(n_target * n_state, n_state); // initial estimate error covariance
-    Q = Eigen::MatrixXd::Zero(n_state, n_state);  // process noise covariance
-    A = Eigen::MatrixXd::Zero(2, 2);              // Sigma^(1/2) - used for shape/orientation estimation elsewhere
-    x0 = Eigen::MatrixXd::Zero(n_target, n_state);
-
-    for (int j = 0; j < n_target; j++)
-    {
-        for (int i = 0; i < n_state; i++)
+        // runs every time we get an event packet
+        void eventpacket_cb(const event_camera_msgs::msg::EventPacket::SharedPtr msg)
         {
-            F(j * n_state + i, i) = 1; // start as identity (each state persists by default)
+            // Retrieve or instantiate the matching decoder instance for this packet type
+            auto decoder = decoder_factory.getInstance(*msg);
+
+            if (!decoder) {
+                RCLCPP_ERROR(this->get_logger(), "Unknown package encoding: %s", msg->encoding.c_str());
+                return;
+            }
+            
+            // Unpack the compressed event packet array. This sends each unpacked event one by one to the EventProcessor::eventCD callback in the class below
+            decoder->decode(*msg, &processor);
         }
-        // Constant-velocity coupling: position += velocity * dt
-        F(j * n_state, 2) = params.dt;     // x += vx * dt
-        F(j * n_state + 1, 3) = params.dt; // y += vy * dt
-        F(j * n_state + 6, 7) = params.dt; // theta += angular_velocity * dt
-    }
 
-    Eigen::MatrixXd P_block = Eigen::MatrixXd::Zero(n_state, n_state);
-    x0.block(0, 4, n_target, 1).setConstant(params.lambda_init);  // initial size param 1
-    x0.block(0, 8, n_target, 2).setConstant(0);                   // initial extra states
-    x0.block(0, 5, n_target, 1).setConstant(params.lambda_init);  // initial size param 2
+        // Member Variables //
 
-    // Diagonal (uncorrelated) initial covariance, one variance value per state dimension.
-    P_block.diagonal() << params.var_x, params.var_y, params.var_vx,
-        params.var_vy, params.var_lambda_1, params.var_lambda_2, params.var_theta,
-        params.var_q, 50, 50;
+        // ROS2 things
+        rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_publisher;
+        rclcpp::Subscription<event_camera_msgs::msg::EventPacket>::SharedPtr event_sub;
 
-    // Diagonal process noise - how much we expect each state to drift/be uncertain per step.
-    Q.diagonal() << params.q_x, params.q_y, params.q_vx, params.q_vy,
-        params.q_lambda_1, params.q_lambda_2, params.q_theta, params.q_q, 5, 5;
+        // Event decoder structures
+        event_camera_codecs::DecoderFactory<event_camera_msgs::msg::EventPacket, EventProcessor> decoder_factory;
+        EventProcessor processor;
 
-    for (int row = 0; row < n_target; row++)
-    {
-        P.block(row * n_state, 0, n_state, n_state) << P_block;
-    }
+        // Timer for display refresh
+        rclcpp::TimerBase::SharedPtr display_timer;
+};
 
-    // SETUP THE TRACK MANAGER //
-    TrackManager track_manager(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state);
-    track_manager.update_default_dist_threshold(params.dist_threshold);
-    track_manager.update_frame_dimensions(params.height, params.width);
-    track_manager.update_event_rate_threshold(params.event_rate_threshold);
-    track_manager.store_parameters(
-        params.evaluate_ts_age,
-        params.evaluate_dt_terminate,
-        params.evaluate_low_activity_factor
-    );
 
-    int double_track_evaluation_counter = 0;
-
-    // RENDER INITIAL FRAME //
-    display(dispParams, params, ts, output_video, output_video_ref, image_ref_ts, p, track_manager.getTracks());
-
-    double t_last = -1;
-    bool f_associated_this_ts = 0;
-    bool f_write_position = 0;
-
-}
 
 
 //////////////// ENTRY POINT /////////////////////////
 int main(int argc, char * argv[])
 {
     // Establish conenction to ROS2
-    rclpp::init(argc, argv);
+    rclcpp::init(argc, argv);
 
     // Start up the node
     rclcpp::spin(std::make_shared<AEBNode>());
@@ -651,46 +648,7 @@ void display(const DisplayParams &dispParams, Parameters &params,
 
     // --- KEYBOARD SHORTCUTS ---
     int keyPressed = cv::waitKey(30);
-    if (keyPressed == 27) // ESC: re-enter manual target selection mode mid-run
-    {
-        // MANUAL TARGET SELECTION MODE (ESCAPE)
-        for (int i = 0; i < n_target; i++)
-        {
-            std::cout << "Press ESC to start selecting points, and press Enter when "
-                        "finished.\n";
-            std::cout << "Waiting to click to select a point ... \n";
-            selectedPoint = cv::Point(-1, -1);
-            while ((selectedPoint.x == -1 && selectedPoint.y == -1) && keyPressed != 13)
-            {
-                keyPressed = cv::waitKey(1); // block until a click or Enter
-            }
-            if (keyPressed == 13) // if Enter pressed:
-            {
-                std::cout << "Selection completed.\n";
-                std::cout << "Event Id: " << EventId << "\n";
-                std::cout << x_hat << std::endl;
-                // Re-initialise the filter matrices with fresh (larger) initial position variance,
-                // since we're about to start a brand-new track from a click.
-                params.var_x = 2;
-                params.var_y = 2;
-                init(params);
-                break;
-            }
-            selectedPoints.push_back(selectedPoint);
-            std::cout << "Selected point: (" << selectedPoint.x << ", " << selectedPoint.y << ")\n";
-            std::cout << "Event Id: " << EventId << "\n";
-            std::cout << "Time: " << ts << "\n";
-
-            // Manually populate a fresh state vector for this clicked point.
-            x_hat(i, 0) = selectedPoint.x;
-            x_hat(i, 1) = selectedPoint.y;
-            x_hat(i, 2) = 0; // vx
-            x_hat(i, 3) = 0; // vy
-            x_hat(i, 4) = 2; // size/lambda_1
-            x_hat(i, 5) = 2; // size/lambda_2
-        }
-    }
-    else if (keyPressed == 116 || keyPressed == 84) // 't' or 'T': print current status to console
+    if (keyPressed == 116 || keyPressed == 84) // 't' or 'T': print current status to console
     {
         std::cout << "ts: " << ts << " (second)\n";
         std::cout << "Event Id: " << EventId << "\n";
@@ -704,21 +662,11 @@ void display(const DisplayParams &dispParams, Parameters &params,
     if (dispParams.save_video_flag)
     {
         writer.write(cimg);
-        if (params.ref_image_ts_flag)
-        {
-            writer_ref.write(ref_image);
-        }
     }
     if (dispParams.save_image_flag)
     {
         std::string output_image_name = output_image_path + "/image" + std::to_string(image_count) + ".png";
         cv::imwrite(output_image_name, cimg); // ---- writes a PNG to disk ----
-
-        if (params.ref_image_ts_flag)
-        {
-            std::string output_image_ref_name = output_image_path + "/image" + std::to_string(image_count) + "_ref.png";
-            cv::imwrite(output_image_ref_name, ref_image);
-        }
     }
     image_count += 1;
 }
