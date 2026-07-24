@@ -330,7 +330,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             f_associated_this_ts = (f_associated_this_ts | f_event_associated);
 
             // AUTO_DETECTION OF NEW TARGETS //
-            // If the event did NOT get associated to an existing track, then we treat it as a potential background event or candidate event.
+            // If the event did NOT get associated to an existing track, then we treat it as either a noise or object-candidate event.
             // And so we must pass it to the SAEdetector to classify it
             if (!f_event_associated) // if the event hasn't been associated yet
             {
