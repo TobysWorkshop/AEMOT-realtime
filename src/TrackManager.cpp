@@ -20,7 +20,7 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
                            Eigen::MatrixXd x0, int ring_buffer_len, int n_state,
                            int pool_size)
     : dt(dt), F(F), C(C), Q(Q), R(R), P(P), A(A),
-      x0_template(x0), ring_buffer_len(ring_buffer_len), n_state(n_state) 
+      x0_template(x0), ring_buffer_len(ring_buffer_len), n_state(n_state), pool_size(pool_size)
 {
     // Build the entire kalman filter line up on init
     output_tracks.reserve(pool_size);
@@ -68,7 +68,12 @@ TrackManager::~TrackManager()
 // Get the vector of all output/candidate tracks
 std::vector<KalmanFilter *> TrackManager::getTracks()
 {
-    return output_tracks;
+    std::vector<KalmanFilter *> active_tracks;
+    for (auto *kf : output_tracks)
+    {
+        if (kf->active) active_tracks.push_back(kf);
+    }
+    return active_tracks;
 }
 
 // Access individual tracks
@@ -87,47 +92,12 @@ std::vector<int> TrackManager::getValidTrackIds()
     std::vector<int> valid_ids;
     for (int i = 0; i < output_tracks.size(); ++i)
     {
-        if (output_tracks[i] != nullptr) // or add more checks if needed
+        if (output_tracks[i]->active) // or add more checks if needed
         {
             valid_ids.push_back(i);
         }
     }
     return valid_ids;
-}
-
-//************************************************************************************//
-//**********                       ADD MANUAL POINTS                        **********//
-//************************************************************************************//
-// Create trackers from the selected points
-void TrackManager::addSelectedPoints(std::vector<cv::Point> selected_points, double ts)
-{
-    // Delete the existing trackers
-    std::cout << "Initialising new tracks" << std::endl;
-    for (int id = 0; id < output_tracks.size(); id++)
-    {
-        std::cout << "Tracks are deleted" << std::endl;
-        deleteTrack(output_tracks, id);
-    }
-    output_tracks.clear();
-
-    // Initialise the blobs
-    for (int i = 0; i < selected_points.size(); i++)
-    {
-        Eigen::MatrixXd x0_new_track = x0_template;
-        x0_new_track(0) = selected_points[i].x;
-        x0_new_track(1) = selected_points[i].y;
-
-        // Create new kalman filter pointer and store in vector
-        KalmanFilter *new_kf = new KalmanFilter(dt, F, C, Q, R, P, A, x0_new_track, n_state, ring_buffer_len);
-        new_kf->init(ts, " ");
-        new_kf->update_distance_threshold(this->default_dist_threshold);
-        new_kf->setID(next_unique_id);
-        new_kf->openOutputFile(); // HACK
-        new_kf->validated = 1;
-        output_tracks.push_back(new_kf);
-
-        next_unique_id++;
-    }
 }
 
 //************************************************************************************//
@@ -146,6 +116,9 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             Eigen::MatrixXd x0_new_track = x0_template;
             x0_new_track(0) = new_point(0);
             x0_new_track(1) = new_point(1);
+
+            // reset the filter
+            kf->reset(x0_new_track, new_point(2));
 
             kf->update_distance_threshold(default_dist_threshold);
             kf->update_ts_last_for_gamma(new_point(2));
@@ -229,6 +202,9 @@ std::vector<int> TrackManager::evaluateTracksPosition(){
 
     // Iterate through all tracks and evaluate
     for (int i = output_tracks.size()-1; i >= 0; i--){
+
+        if(!output_tracks[i]->active) continue; // Skip inactive tracks
+
         Eigen::Vector<double, 10> x_hat_i = output_tracks[i]->state().transpose();
                    
         // Conditions
@@ -251,6 +227,9 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
 
     // Iterate through all pairs of tracks
     for (int i = 0; i < output_tracks.size(); i++){
+
+        if(!output_tracks[i]->active) continue; // Skip inactive tracks
+
         for (int j = 0; j < output_tracks.size(); j++){
             // Skip if it is the same track in both loops
             if (i == j){
@@ -287,6 +266,13 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
     return deleted_IDs;
 }
 
+int TrackManager::activeCount()
+{
+    int count = 0;
+    for (auto *kf : output_tracks) if (kf->active) count++;
+    return count;
+}
+
 //************************************************************************************//
 //**********                         COMMUNICATION                          **********//
 //************************************************************************************//
@@ -313,5 +299,4 @@ void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int tra
 {
     KalmanFilter *kf = track_array[track_id];
     kf->active = false; // Mark the Kalman filter as inactive
-    kf->closeOutputFile(); // Close any open files associated with the track
 }

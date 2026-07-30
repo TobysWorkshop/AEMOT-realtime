@@ -119,6 +119,9 @@ public:
   bool active = false;
   double dt_moving_avg = 1;
 
+  //destructor
+  ~KalmanFilter();
+
 private:
   std::ofstream blob_measurements_txt_, states_txt_;
 

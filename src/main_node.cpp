@@ -10,7 +10,7 @@
 
 // Message types for publishing and subscribing to topics
 #include "std_msgs/msg/string.hpp"
-#include "event_camera_msg/msg/event_packet.hpp" //check this formatting
+#include "event_camera_msgs/msg/event_packet.hpp" //check this formatting
 
 // Event processor for decoding raw event messages
 #include <iostream>
@@ -209,7 +209,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             }
 
             // SETUP THE TRACK MANAGER //
-            track_manager = std::make_unique<TrackManager>(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state);
+            track_manager = std::make_unique<TrackManager>(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state, params.pool_size);
             track_manager->update_default_dist_threshold(params.dist_threshold);
             track_manager->update_frame_dimensions(params.height, params.width);
             track_manager->update_event_rate_threshold(params.event_rate_threshold);
@@ -261,29 +261,31 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
-            //check if the track manager has any existing tracks its managing
-            if (track_manager->len() > 0)
+            
+            
+            // NEAREST NEIGHBOUR DATA ASSOCIATION //
+            //Find which existing track's predicted position is closest to this event's location
+            bool any_active = false;
+            double dist_min = 1e6; // a very large starting distance
+
+            // itterate through the track manager's current tracks to find the closest
+            for (int i = 0; i < track_manager->len(); i++)
             {
-                // NEAREST NEIGHBOUR DATA ASSOCIATION //
-                //Find which existing track's predicted position is closest to this event's location
-                double dist_min = 1e6; // a very large starting distance
+                // * if the track isn't active (just a waiting container), skip it
+                if (!track_manager->getTrack(i)->active) continue;
+                any_active = true;
+                x_hat_track = track_manager->getTrack(i)->state();
+                distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
 
-                // itterate through the track manager's current tracks to find the closest
-                for (int i = 0; i < track_manager->len(); i++)
+                if (distance < dist_min)
                 {
-                    // * if the track isn't active (just a waiting container), skip it
-                    if (!track_manager->getTrack(i)->active) continue;
-
-                    x_hat_track = track_manager->getTrack(i)->state();
-                    distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
-
-                    if (distance < dist_min)
-                    {
-                        dist_min = distance;
-                        id = i; // remember the index of the closest track
-                    }
+                    dist_min = distance;
+                    id = i; // remember the index of the closest track
                 }
+            }
 
+            if (any_active)
+            {
                 // Pull out the closest track's full state/covarience to check if its feasible to now associate it
                 x_hat_track = track_manager->getTrack(id)->state();
                 P_track = track_manager->getTrack(id)->P_x();
@@ -324,8 +326,8 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                     f_event_associated = 1; // flag this event as associated! This will mean we skip allocating it as a new target
                     track_manager->getTrack(id)->update(e, 0, p);
                 }
-
-            } // end nearest-neighbour data association step
+            }
+            // end nearest-neighbour data association step
 
             f_associated_this_ts = (f_associated_this_ts | f_event_associated);
 
@@ -345,8 +347,8 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             // - we're far enough from existing tracks (or there are no tracks yet)
             // - enough unassociated events have accumulated in the waiting room since the last detection attempt
             if ((!f_event_associated) &
-                (track_manager->hasAvailableSlots()) & // * 
-                (distance > params.detector_dist_threshold || track_manager->len() == 0) &
+                (track_manager->hasAvailableSlot()) & // * 
+                (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
                 (detection_event_count > params.SAE_operation_rate))
             {
                 detection_event_count = 0;
@@ -367,7 +369,9 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
             double_track_evaluation_counter++;
-            if ((track_manager->len() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager->len() > 1)))
+            full_evaluation_counter++;
+
+            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager->activeCount() > 1)))
             {
                 double_track_evaluation_counter = 0;
                 deleted_IDs_temp = track_manager->evaluateDoubleTracks();
@@ -376,14 +380,15 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                 }
             }
             // (b) Full evaluation (age/activity/etc.) - runs only every 100 events, if enabled.
-            else if ((track_manager->len() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100)){
+            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 100)){
+                full_evaluation_counter = 0;
                 deleted_IDs_temp = track_manager->evaluateTracks(ts);
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
                 }
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
-            else if ((track_manager->len() > 0) & (params.f_evaluate == 0)){
+            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
                 deleted_IDs_temp = track_manager->evaluateTracksPosition();
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
@@ -405,17 +410,14 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             // BOOKEEPING AFTER EVALUATION //
             // Keep the track id valid if a track was deleted this iteration
-            if (track_manager->len() > 0)
+            if (track_manager->activeCount() > 0)
             {
                 if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
-                    if (id < track_manager->len()){
-                        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
-                    }
+                    track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
                 }
-
-                ts_kf_last = ts;
             }
 
+            ts_kf_last = ts;
             t_last = ts; // advance the previous timestep marker, ready for the next event to come in!
 
         } // end eventCD() function
@@ -427,7 +429,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             if (!track_manager) return;
 
-            high_pass_global(ts_kf_last_, params_.alpha);
+            high_pass_global(ts_kf_last, params.alpha);
             display(dispParams, params, ts_kf_last, output_video, output_video_ref,
                     image_ref_ts, 0, track_manager->getTracks());
         }
@@ -446,10 +448,10 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
         bool f_associated_this_ts = false;
         bool f_write_position = false;
         int double_track_evaluation_counter = 0;
+        int full_evaluation_counter = 0;
         int id = 0;
         double distance = 0.0;
         double detection_event_count = 0.0;
-        double t_next_publish = 0.0;
         double ts_kf_last = 0.0;
 
         std::vector<cv::Mat> output_video;
@@ -651,19 +653,6 @@ void display(const DisplayParams &dispParams, Parameters &params,
     }
 
     cv::imshow("Video", cimg); // show the reconstructed+annotated frame
-
-
-    // --- KEYBOARD SHORTCUTS ---
-    int keyPressed = cv::waitKey(30);
-    if (keyPressed == 116 || keyPressed == 84) // 't' or 'T': print current status to console
-    {
-        std::cout << "ts: " << ts << " (second)\n";
-        std::cout << "Event Id: " << EventId << "\n";
-        std::cout << "Current location x: (" << x_hat(0, 0) << ", " << x_hat(0, 1) << ")\n";
-        std::cout << "Current lambda: (" << x_hat(0, 4) << ")\n";
-        std::cout << "Current P_x: (" << P_x(0, 0) << ", " << P_x(1, 1) << ")\n";
-    }
-    cv::waitKey(1);
 
     // --- Save outputs ---
     if (dispParams.save_video_flag)

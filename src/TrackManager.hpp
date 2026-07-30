@@ -24,7 +24,6 @@ public:
                  int pool_size);
 
     // Add track to output
-    void addSelectedPoints(std::vector<cv::Point> selected_points, double ts);
     void createNewTrack(Eigen::Vector<double,3> new_point);
 
     // Evaluation
@@ -44,8 +43,6 @@ public:
 
     bool hasAvailableSlot();
 
-    void clean_up();
-
     int len(){ return output_tracks.size(); };
 
     void update_default_dist_threshold(double dist_threshold);
@@ -59,11 +56,12 @@ public:
 
     std::vector<int> getValidTrackIds();
 
+    int activeCount();
+
 private:
     //------------------------------------------//
     //-----        PRIVATE FUNCTIONS       -----//
     //------------------------------------------//
-    void addTrack(std::vector<cv::Point>);
     void deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id);
 
     //------------------------------------------//

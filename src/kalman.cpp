@@ -46,9 +46,9 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
 
 KalmanFilter::KalmanFilter() {}
 
-// KalmanFilter::~KalmanFilter{
-//   delete decoder;
-// }
+KalmanFilter::~KalmanFilter(){
+  delete decoder;
+}
 
 void KalmanFilter::init(double t0, std::string input_folder_name)
 {

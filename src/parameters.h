@@ -70,6 +70,8 @@ struct Parameters
   double evaluate_ts_age;
   double evaluate_dt_terminate;
   double evaluate_low_activity_factor;
+
+  int pool_size;
 };
 
 struct DisplayParams
