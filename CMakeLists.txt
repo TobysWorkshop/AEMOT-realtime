@@ -22,6 +22,10 @@ add_executable(aeb_node
   src/SAEdetector.cpp
   src/decoding.cpp
   src/parameters.cpp
+  src/SAEdetector.cpp
+  src/SAE.cpp
+  src/parameters.cpp
+  src/parameters_decoding.cpp
 )
 
 ament_target_dependencies(aeb_node

@@ -1,5 +1,5 @@
 
-input_folder_path: "D:/AEMOT_ROS2"
+input_folder_path: "~/AEMOT_ROS2"
 input_data_name: "nan" ##unused
 
 ref_image_ts_path: ""
@@ -103,7 +103,7 @@ detector_dist_threshold       : 40        # distance from existing track to allo
 detector_dt_threshold         : 0.0005 #0500  # maximum dt in sae patch around new event to detect led. 
 
 # Evaluation parameters
-f_evaluate                    : 1
+f_evaluate                    : 0 ##CHNAGE BACK TO 1
 evaluate_ts_age               : 0.005    # how long to wait before evaluating (let it get some events and initialise)
 evaluate_dt_terminate         : 0.05     # time with no events before deleting 
 evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to delete track

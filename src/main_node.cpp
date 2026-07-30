@@ -15,6 +15,8 @@
 // Event processor for decoding raw event messages
 #include <iostream>
 #include <event_camera_codecs/event_processor.h>
+#include <event_camera_codecs/decoder.h>
+#include <event_camera_codecs/decoder_factory.h>
 
 // Local files/other modules
 #include "kalman.hpp"        // Defines KalmanFilter class - one instance tracks one target's state
@@ -23,6 +25,7 @@
 #include "SAEdetector.hpp"   // Defines SAEdetector - automatic new-target detector from event data
 
 // Other includes
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "yaml-cpp/yaml.h"      
 #include <eigen3/Eigen/Dense>   
 #include <chrono>
@@ -113,7 +116,8 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             // PARSE THE CONFIG //
             try
             {
-                std::string file_config_path = "../configs/" + config_name + ".yaml";
+                std::string package_share_dir = ament_index_cpp::get_package_share_directory("aemot_ros2");
+                std::string file_config_path = package_share_dir + "/configs/" + config_name + ".yaml";
                 params = loadParametersFromYAML(file_config_path);
                 dispParams = loadDispParametersFromYAML(file_config_path);
             }
@@ -133,15 +137,27 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
             // SET UP DISPLAY WINDOW //
             cv::namedWindow("Video");
+            cv::resizeWindow("Video", params.width, params.height);
             std::string output_ref_video_path = input_event_path + "_video_ref.avi";
             std::string output_video_path = input_event_path + "_video.avi";
             if (params.save_video_flag)
             {
-                // Opens an .avi writer for the reconstructed event-video (MJPG codec, fixed 40 fps)
-                writer.open(output_video_path,
-                            cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 40.0,
-                            cv::Size(params.width, params.height)
-                );
+                std::string output_video_path = input_event_path + "_video.avi";
+                // Prefer a codec/backend that works on Ubuntu without GStreamer drama
+                int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+                writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
+
+                if (!writer.isOpened()) {
+                    // fallback
+                    fourcc = cv::VideoWriter::fourcc('X', 'V', 'I', 'D');
+                    writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
+                }
+                if (!writer.isOpened()) {
+                    std::cerr << "ERROR: could not open VideoWriter for " << output_video_path << std::endl;
+                    params.save_video_flag = false;
+                } else {
+                    std::cerr << "VideoWriter opened: " << output_video_path << std::endl;
+                }
 
             }
 
@@ -224,12 +240,21 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
 
         } // end initialise
 
+        bool eventExtTrigger(uint64_t /*ts*/, uint8_t /*p*/, uint8_t /*id*/) override
+        {
+            return true;   // ignore external triggers
+        }
+
+        void finished() override {}
+
+        void rawData(const char * /*data*/, size_t /*len*/) override {}
+
         // This runs every time a decoded event is pulled from the current event packet
         void eventCD(uint64_t ts_ns, uint16_t c, uint16_t r, uint8_t p) override {
             // ts_ns = sensor timestamp in nanoseconds
             // c, r = column, row (pixel coordinates). Annalogous to x and y respectively
             // p = polarity
-
+            
             std::lock_guard<std::mutex> lock(state_mutex);
             ///// HERE IS WHERE THE PIPELINE FROM THE ORIGINAL MAIN.CPP CODE IS IMPLEMENTED!! /////
             EventId++;
@@ -359,6 +384,11 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                 {
                     // ---- NEW KalmanFilter TRACK CREATED HERE (inside TrackManager) ----
                     track_manager->createNewTrack({(double) c, (double) r, ts});
+
+                    //debug
+                    std::cerr << "[track] NEW track at (" << c << "," << r
+                              << ") ts=" << ts
+                              << " active=" << track_manager->activeCount() << std::endl;
                 }
             }
 
@@ -380,7 +410,7 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
                 }
             }
             // (b) Full evaluation (age/activity/etc.) - runs only every 100 events, if enabled.
-            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 100)){
+            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 1001)){
                 full_evaluation_counter = 0;
                 deleted_IDs_temp = track_manager->evaluateTracks(ts);
                 if (deleted_IDs_temp.size() > 0){
@@ -430,6 +460,25 @@ class EventProcessor : public event_camera_codecs::EventProcessor {
             if (!track_manager) return;
 
             high_pass_global(ts_kf_last, params.alpha);
+
+            //debug
+            auto tracks = track_manager->getTracks();
+            int active = 0, validated = 0;
+            for (auto *t : tracks) {
+                if (!t) continue;
+                if (t->active) active++;
+                if (t->validated == 1) validated++;
+            }
+            static int frame = 0;
+            if (++frame % 30 == 0) {  // ~1 Hz at 30 Hz display
+                std::cerr << "[display] tracks=" << tracks.size()
+                        << " active=" << active
+                        << " validated=" << validated
+                        << " EventId=" << EventId
+                        << " ts=" << ts_kf_last << std::endl;
+            }
+
+
             display(dispParams, params, ts_kf_last, output_video, output_video_ref,
                     image_ref_ts, 0, track_manager->getTracks());
         }
@@ -494,7 +543,8 @@ class AEBNode : public rclcpp::Node
 
             // SUBSCRIBERS
             event_sub = this->create_subscription<event_camera_msgs::msg::EventPacket>(
-                EVENTS_IN_TOPIC, 10,
+                EVENTS_IN_TOPIC,
+                rclcpp::SensorDataQoS(),
                 std::bind(&AEBNode::eventpacket_cb, this, std::placeholders::_1)  
             );
 
@@ -653,9 +703,10 @@ void display(const DisplayParams &dispParams, Parameters &params,
     }
 
     cv::imshow("Video", cimg); // show the reconstructed+annotated frame
+    cv::waitKey(1);
 
     // --- Save outputs ---
-    if (dispParams.save_video_flag)
+    if (params.save_video_flag && writer.isOpened())
     {
         writer.write(cimg);
     }

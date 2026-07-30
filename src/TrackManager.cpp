@@ -125,6 +125,12 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->setID(next_unique_id);
             kf->active = true;
 
+            //debug
+            std::cerr << "[new] slot=" << i
+                        << " xy=(" << new_point(0) << "," << new_point(1) << ")"
+                        << " t0=" << new_point(2)
+                        << " activeCount=" << activeCount() << std::endl;
+
             if (f_decode){
                 kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
             }
@@ -174,7 +180,22 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
                 }
                 // std::cout << out_of_frame << "\t" << inactive << "\t" << low_activity << "\t" << invalid_shape << std::endl;
 
-                deleted_IDs.push_back(i);
+
+                //debug
+                std::cerr << "[del] id=" << i
+                            << " age=" << (ts_now - output_tracks[i]->get_t0())
+                            << " out=" << out_of_frame
+                            << " inact=" << inactive
+                            << " low=" << low_activity
+                            << " shape=" << invalid_shape
+                            << " rate=" << (1.0 / output_tracks[i]->dt_moving_avg)
+                            << " thr=" << event_rate_threshold
+                            << " val=" << output_tracks[i]->validated
+                            << " xy=(" << x_hat_i(0) << "," << x_hat_i(1) << ")"
+                            << " lam=(" << x_hat_i(4) << "," << x_hat_i(5) << ")"
+                            << std::endl;
+
+                deleted_IDs.push_back(deleted_IDs_temp[i]);
                 deleteTrack(output_tracks, i);        
                 continue;
             }
