@@ -89,6 +89,8 @@ public:
     x_hat = x0x;
   }
 
+  void reset(const Eigen::MatrixXd &x0_new, double ts);
+
   void initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id);
 
   // Comms
@@ -114,6 +116,7 @@ public:
   Eigen::MatrixXd P_x() { return P; };
 
   bool validated = 0;
+  bool active = false;
   double dt_moving_avg = 1;
 
 private:

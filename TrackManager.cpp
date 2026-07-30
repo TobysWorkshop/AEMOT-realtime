@@ -17,10 +17,20 @@
 TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
                            Eigen::MatrixXd Q, Eigen::MatrixXd R,
                            Eigen::MatrixXd P, Eigen::MatrixXd A,
-                           Eigen::MatrixXd x0, int ring_buffer_len, int n_state)
+                           Eigen::MatrixXd x0, int ring_buffer_len, int n_state,
+                           int pool_size)
     : dt(dt), F(F), C(C), Q(Q), R(R), P(P), A(A),
-      x0_template(x0), ring_buffer_len(ring_buffer_len), n_state(n_state) {
-      };
+      x0_template(x0), ring_buffer_len(ring_buffer_len), n_state(n_state) 
+{
+    // Build the entire kalman filter line up on init
+    output_tracks.reserve(pool_size);
+    for (int i = 0; i < pool_size; ++i) 
+    {
+        KalmanFilter *kf = new KalmanFilter(dt, F, C, Q, R, P, A, x0_template, n_state, ring_buffer_len);
+        kf->active = false;
+        output_tracks.push_back(kf);
+    }
+};
 
 void TrackManager::update_default_dist_threshold(double dist_threshold)
 {
@@ -42,6 +52,14 @@ void TrackManager::store_parameters(double ts_age, double dt_terminate, double l
     this->evaluate_ts_age = ts_age;
     this->evaluate_dt_terminate = dt_terminate;
     this->evaluate_low_activity_factor = low_activity_factor;
+}
+
+TrackManager::~TrackManager()
+{
+    for (auto *kf : output_tracks)
+    {
+        delete kf;
+    }
 }
 
 //************************************************************************************//
@@ -116,28 +134,44 @@ void TrackManager::addSelectedPoints(std::vector<cv::Point> selected_points, dou
 //**********                        SPAWN CANDIDATES                        **********//
 //************************************************************************************//
 // Create new candidate tracker
-void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point){
-    Eigen::MatrixXd x0_new_track = x0_template;
-    x0_new_track(0) = new_point(0);
-    x0_new_track(1) = new_point(1);
+void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
+{
+    for (int i = 0; i < output_tracks.size(); ++i)
+    {
+        if (!output_tracks[i]->active)
+        {
+            // Reuse an inactive Kalman filter
+            KalmanFilter *kf = output_tracks[i];
 
-    // Create new kalman filter pointer and store in vector
-    KalmanFilter *new_kf = new KalmanFilter(dt, F, C, Q, R, P, A, x0_new_track, n_state, ring_buffer_len);
-    new_kf->init(new_point(2), " ");
-    new_kf->update_distance_threshold(this->default_dist_threshold);
-    new_kf->update_ts_last_for_gamma(new_point(2));
-    new_kf->setID(next_unique_id);
-    // new_kf->openOutputFile(); // HACK
+            Eigen::MatrixXd x0_new_track = x0_template;
+            x0_new_track(0) = new_point(0);
+            x0_new_track(1) = new_point(1);
 
-    if (f_decode){
-        new_kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
+            kf->update_distance_threshold(default_dist_threshold);
+            kf->update_ts_last_for_gamma(new_point(2));
+            kf->setID(next_unique_id);
+            kf->active = true;
+
+            if (f_decode){
+                kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
+            }
+
+            next_unique_id++;
+            return; // stop after filling one inactive slot
+        }
     }
-
-    output_tracks.push_back(new_kf);
-
-    next_unique_id++;
+    
+    std::cout << "Warning! Kalman lineup is exhausted - no free slot for an new track! Consider increasing pool_size.\n";
 }
 
+bool TrackManager::hasAvailableSlot()
+{
+    for (auto *kf : output_tracks)
+    {
+        if (!kf->active) return true;
+    }
+    return false;
+}
 //************************************************************************************//
 //**********                        EVALUATE TRACKS                         **********//
 //************************************************************************************//
@@ -147,6 +181,8 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
 
     // Iterate through all tracks and evaluate
     for (int i = output_tracks.size()-1; i >= 0; i--){
+
+        if(!output_tracks[i]->active) continue; // Skip inactive tracks
 
         if (ts_now - output_tracks[i]->get_t0() >= evaluate_ts_age){ 
             Eigen::Vector<double, 10> x_hat_i = output_tracks[i]->state().transpose();
@@ -275,7 +311,7 @@ void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::s
 //------------------------------------------//
 void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id)
 {
-    KalmanFilter *ptr_to_delete = track_array[track_id];
-    delete ptr_to_delete;
-    track_array.erase(track_array.begin() + track_id);
+    KalmanFilter *kf = track_array[track_id];
+    kf->active = false; // Mark the Kalman filter as inactive
+    kf->closeOutputFile(); // Close any open files associated with the track
 }

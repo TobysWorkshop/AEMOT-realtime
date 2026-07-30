@@ -20,7 +20,8 @@ public:
     TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
                  Eigen::MatrixXd Q, Eigen::MatrixXd R,
                  Eigen::MatrixXd P, Eigen::MatrixXd A,
-                 Eigen::MatrixXd x0, int ring_buffer_len, int n_state);
+                 Eigen::MatrixXd x0, int ring_buffer_len, int n_state, 
+                 int pool_size);
 
     // Add track to output
     void addSelectedPoints(std::vector<cv::Point> selected_points, double ts);
@@ -37,6 +38,11 @@ public:
     // Access the track objects
     std::vector<KalmanFilter *> getTracks();
     KalmanFilter *getTrack(int id);
+
+    // Destructor
+    ~TrackManager();
+
+    bool hasAvailableSlot();
 
     void clean_up();
 
@@ -74,6 +80,8 @@ private:
     double default_dist_threshold;
     int height = 720;
     int width = 1280;
+
+    int pool_size = 10; // set the number of available kalman objects here!!
 
     double event_rate_threshold;
 

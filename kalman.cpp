@@ -24,6 +24,8 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
   I.setIdentity();
   x_hat = x0;
 
+  decoder = nullptr; //instanciate this here
+
   // Important for re-init different targets
   ts_last.clear();
   ring_buffer_e.clear();
@@ -100,7 +102,38 @@ void KalmanFilter::openOutputFile(){ // HACK : comment these lines to stop files
 
 void KalmanFilter::initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id)
 {
+  delete decoder; // Delete any existing decoder to avoid memory leaks
   decoder = new Decoding(dt, data_name, input_event_path, contrast_threshold, id);
+}
+
+void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
+{
+  x_hat = x0_new; // reset state vector
+  P = P0;         // reset covariance matrix
+  t0 = ts;        // reset initial time
+  ts_last_for_gamma = ts; // reset last timestamp for gamma calculation
+  dt_moving_avg = 1; // reset moving average of dt
+  validated = 0; // reset validation flag
+  active = false; // reset active flag
+  initialized = true;
+
+  f_equivalent_measurement_init = 0; // reset equivalent measurement initialization flag
+  equiv_measurement_count = 0; // reset equivalent measurement count
+
+  // Important for re-init different targets
+  ts_last.clear();
+  ring_buffer_e.clear();
+  ring_buffer_x.clear();
+  ring_buffer_theta.clear();
+  ring_buffer_delta.clear();
+  for (int i = 0; i < n_target; i++)
+  {
+    ts_last.push_back(ts);
+    ring_buffer_e.emplace_back(ring_buffer_len);
+    ring_buffer_x.emplace_back(ring_buffer_len);
+    ring_buffer_theta.emplace_back(ring_buffer_len);
+    ring_buffer_delta.emplace_back(ring_buffer_len);
+  }
 }
 
 void KalmanFilter::update_distance_threshold(double distance_threshold)

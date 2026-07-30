@@ -338,7 +338,7 @@ int main(int argc, char *argv[])
   init(params);
 
   // Create Track Manager
-  TrackManager track_manager(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state);
+  TrackManager track_manager(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state, params.pool_size);
   track_manager.update_default_dist_threshold(params.dist_threshold);
   track_manager.update_frame_dimensions(params.height, params.width);
   track_manager.update_event_rate_threshold(params.event_rate_threshold);
