@@ -112,9 +112,8 @@ void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
   P = P0;         // reset covariance matrix
   t0 = ts;        // reset initial time
   ts_last_for_gamma = ts; // reset last timestamp for gamma calculation
-  dt_moving_avg = 1; // reset moving average of dt
+  dt_moving_avg = 1e-3; // reset moving average of dt
   validated = 0; // reset validation flag
-  active = false; // reset active flag
   initialized = true;
 
   f_equivalent_measurement_init = 0; // reset equivalent measurement initialization flag

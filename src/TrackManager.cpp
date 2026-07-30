@@ -195,7 +195,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
                             << " lam=(" << x_hat_i(4) << "," << x_hat_i(5) << ")"
                             << std::endl;
 
-                deleted_IDs.push_back(deleted_IDs_temp[i]);
+                deleted_IDs.push_back(i);
                 deleteTrack(output_tracks, i);        
                 continue;
             }
