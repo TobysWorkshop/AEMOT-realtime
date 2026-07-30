@@ -86,28 +86,28 @@ flag_save_G: 0
 
 # Detector
 
-f_show_candidates             : 0
+f_show_candidates             : 1
 
 # Line detector
 SAE_ksize                     : 7
 SAE_alpha                     : 5
-SAE_operation_rate            : 100 # how many events between each operation
+SAE_operation_rate            : 200 # how many events between each operation
 SAE_detection_threshold       : 0.9 # val = cos(theta)
-SAE_min_active_pixels         : 30
-SAE_min_contributions         : 30
+SAE_min_active_pixels         : 40
+SAE_min_contributions         : 40
 SAE_min_detections_in_patch   : 40
 MAX_NUMBER_OF_TRACKS          : 100
 
 # Dt detection
-detector_dist_threshold       : 40        # distance from existing track to allow detection
-detector_dt_threshold         : 0.0005 #0500  # maximum dt in sae patch around new event to detect led. 
+detector_dist_threshold       : 50        # distance from existing track to allow detection
+detector_dt_threshold         : 0.001 #0500  # maximum dt in sae patch around new event to detect led. 
 
 # Evaluation parameters
-f_evaluate                    : 0 ##CHNAGE BACK TO 1
-evaluate_ts_age               : 0.005    # how long to wait before evaluating (let it get some events and initialise)
-evaluate_dt_terminate         : 0.05     # time with no events before deleting 
-evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to delete track
-event_rate_threshold          : 100000   # event rate required for validation
+f_evaluate                    : 1
+evaluate_ts_age               : 0.3    # how long to wait before evaluating (let it get some events and initialise)
+evaluate_dt_terminate         : 0.5     # time with no events before deleting 
+evaluate_low_activity_factor  : 0.05     # factor of event rate threshold to delete track
+event_rate_threshold          : 2000   # event rate required for validation
 
 
 pool_size : 10
