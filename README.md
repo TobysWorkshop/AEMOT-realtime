@@ -1,4 +1,4 @@
-# Real-time Asynchronous Multi-Object Tracking with an Event Camera (AEMOT) ROS2 Node
+# Real-time 'Asynchronous Multi-Object Tracking with an Event Camera' (AEMOT) ROS2 Node
 
 > Now in real-time!
 
