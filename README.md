@@ -4,9 +4,9 @@
 
 This is currently a work in progress.
 
-This package takes the core of the AEMOT code (developed by Angus Apps, Ziwei Wang, Vladimir Perejogin, Timothy L. Molloy, and Robert Mahony) and configures it for real-time event data input and tracking using a ROS2 node.
+This package takes the core of a reduced version of the AEMOT code (developed by Angus Apps, Ziwei Wang, Vladimir Perejogin, Timothy L. Molloy, and Robert Mahony) and configures it for real-time event data input and tracking using a ROS2 node.
 
-You can see the original code on GitHub [HERE](https://github.com/angus-apps/AEMOT)
+You can see the original full code on GitHub [HERE](https://github.com/angus-apps/AEMOT). The exact, reduced, code that this package here was based on was provided directly by one of the original authors.
 
 ## How to install and build
 This package is built for an environment running ***ROS2 Jazzy*** (requires ***Ubuntu 24.04***). However, it should be able to run with little to no changes on later versions of ROS2 (such as *ROS2 Lyrical* on *Ubuntu 26.04*). This is yet to be tested, though. 
