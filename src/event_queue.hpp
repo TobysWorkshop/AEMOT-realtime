@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../gen4/common/sepia.hpp"
+#include "sepia.hpp"
 
 #include <condition_variable>
 #include <deque>

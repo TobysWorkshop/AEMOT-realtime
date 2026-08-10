@@ -205,31 +205,31 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
     if (equiv_measurement_count >= equiv_measurement_step){
       //------------------------------------------------//
       // Write predicted state
-      blob_measurements_txt_ << std::fixed << std::setprecision(12);
-      blob_measurements_txt_ << track_id << "," << ts_last[id];
-      for (int i = 0; i < 4; ++i){
-        blob_measurements_txt_ << "," << x_hat_pred(0, i);
-      }
-      blob_measurements_txt_ << ",";
-      for (int i = 0; i < 4; ++i) {
-          for (int j = 0; j < 4; ++j) {
-              blob_measurements_txt_ << P_pred(i,j);
-              if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
-          }
-      }
-      for (int i = 0; i < 4; ++i){
-        blob_measurements_txt_ << "," << x_hat(0, i);
-      }
-      blob_measurements_txt_ << ",";
+      //blob_measurements_txt_ << std::fixed << std::setprecision(12);
+      //blob_measurements_txt_ << track_id << "," << ts_last[id];
+      //for (int i = 0; i < 4; ++i){
+      //  blob_measurements_txt_ << "," << x_hat_pred(0, i);
+      //}
+      //blob_measurements_txt_ << ",";
+      //for (int i = 0; i < 4; ++i) {
+      //    for (int j = 0; j < 4; ++j) {
+      //        blob_measurements_txt_ << P_pred(i,j);
+      //        if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
+      //    }
+      //}
+      //for (int i = 0; i < 4; ++i){
+      //  blob_measurements_txt_ << "," << x_hat(0, i);
+      //}
+      //blob_measurements_txt_ << ",";
       // Write updated covariance
-      for (int i = 0; i < 4; ++i) {
-          for (int j = 0; j < 4; ++j) {
-              blob_measurements_txt_ << P(i,j);
-              if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
-          }
-      }
-      blob_measurements_txt_ << std::endl;
-      blob_measurements_txt_.flush();
+      //for (int i = 0; i < 4; ++i) {
+      //    for (int j = 0; j < 4; ++j) {
+      //        blob_measurements_txt_ << P(i,j);
+      //        if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
+      //    }
+      //}
+      //blob_measurements_txt_ << std::endl;
+      //blob_measurements_txt_.flush();
 
       //------------------------------------------------//
       // Reset counter

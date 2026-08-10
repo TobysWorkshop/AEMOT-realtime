@@ -123,6 +123,7 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->update_distance_threshold(default_dist_threshold);
             kf->update_ts_last_for_gamma(new_point(2));
             kf->setID(next_unique_id);
+            kf->validated = 0;
             kf->active = true;
 
             //debug
@@ -257,23 +258,26 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
                 continue;
             }
             else {
-                if(!output_tracks[j]->active) continue; // Skip inactive tracks
-                
-                // Read the state
-                Eigen::Vector<double, 10> x_hat_1 = output_tracks[i]->state().transpose();
-                Eigen::Vector<double, 10> x_hat_2 = output_tracks[j]->state().transpose();
+                if(!output_tracks[j]->active) {
+                    continue; // Skip inactive tracks
+                } 
+                else {
+                    // Read the state
+                    Eigen::Vector<double, 10> x_hat_1 = output_tracks[i]->state().transpose();
+                    Eigen::Vector<double, 10> x_hat_2 = output_tracks[j]->state().transpose();
 
-                // Computer x and y distance
-                double x_dist = abs(x_hat_1(0) - x_hat_2(0));
-                double y_dist = abs(x_hat_1(1) - x_hat_2(1));
+                    // Computer x and y distance
+                    double x_dist = abs(x_hat_1(0) - x_hat_2(0));
+                    double y_dist = abs(x_hat_1(1) - x_hat_2(1));
 
-                if ((x_dist < 15) & (y_dist < 15)){
-                    Eigen::Vector2d v1_norm = x_hat_1.segment(2,3).normalized();
-                    Eigen::Vector2d v2_norm = x_hat_2.segment(2,3).normalized();
+                    if ((x_dist < 15) & (y_dist < 15)){
+                        Eigen::Vector2d v1_norm = x_hat_1.segment(2,3).normalized();
+                        Eigen::Vector2d v2_norm = x_hat_2.segment(2,3).normalized();
 
-                    if ((v1_norm.transpose() * v2_norm) < 0.95){
-                        deleted_IDs_temp.push_back(i);
-                    }                    
+                        if ((v1_norm.transpose() * v2_norm) < 0.95){
+                            deleted_IDs_temp.push_back(i);
+                        }                    
+                    }
                 }
             }
         }  

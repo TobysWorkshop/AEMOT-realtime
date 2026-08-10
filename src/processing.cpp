@@ -521,7 +521,9 @@ namespace processing {
             if (track_manager->activeCount() > 0)
             {
                 if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
-                    track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
+                    if (id >= 0 && id < track_manager->len()) {
+                        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
+                    }
                 }
             }
 
