@@ -29,7 +29,7 @@ pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 # --- Executable ------------------------------------------------------------
 
 add_executable(aemot_realtime
-    src/main.cpp
+    src/camera_driver.cpp
     src/processing.cpp
     src/TrackManager.cpp
     src/kalman.cpp
@@ -37,6 +37,7 @@ add_executable(aemot_realtime
     src/SAE.cpp
     src/decoding.cpp
     src/parameters_decoding.cpp
+    src/parameters.cpp
 )
 
 # gen4/common is a sibling of this project's own root (aemot_realtime/), holding
