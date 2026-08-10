@@ -76,9 +76,32 @@ cd aemot_realtime
 git clone https://github.com/TobysWorkshop/AEMOT-realtime.git .
 ```
 
+**<ins>Step 3: Build the project!</ins>**  
+The included CMakelists.txt should resolve the relative file paths and includes as necessary. To build, then, do the following:
+```bash
+# install dependencies (just do this once on project set up)
+sudo apt install cmake libboost-dev libopencv-dev libyaml-cpp-dev libeigen3-dev libusb-1.0-0-dev
+
+# navigate to aemot_realtime/ and build!
+cd ~/working_directory/aemot_realtime
+cmake -B build
+cmake --build build -j$(nproc)
+# This will create the build/ directory inside aemot_realtime/
+```
+
 Now everything is ready to use!
 
-***<ins>Notes on different setups:</ins>*** This exact sister-folder setup is required because some of the C++ files in this project have hard-coded references to include required files from the gen4 directory. If you'd like to alter the file arrangements, or even merge this project code with the required gen4 files, then you will need to update these `#include` references.
+***<ins>Notes on different setups:</ins>*** This exact sister-folder setup is required because some of the C++ files in this project have hard-coded references to include required files from the gen4 directory. If you'd like to alter the file arrangements, or even merge this project code with the required gen4 files, then you will need to update these `#include` references.  
+NOTE: the above has now been changed to rely on the includes in the CMakelists.txt, rather than hard-coded #includes in the individual .cpp files.
 
 ## How to use
-...WIP...
+Once you've built the project, you can run it using the following command (from `aemot_realtime/`):
+```bash
+cd ~working_directory/aemot_realtime
+./build/aemot_realtime <config_name>
+```
+Where `<config_name>` is the name of your desired config file. This must be located inside the `aemot_realtime/configs/` directory.  
+For example, if I have a config file `aemot_realtime/configs/bees.yaml`, then I would simply pass `bees` into the command (**<ins>not</ins>** `bees.yaml`!):  
+`./build/aemot_realtime bees`
+
+If no `<config_name>` is provided, it should default to the included `default.yaml` file: `aemot_realtime/configs/default.yaml`.
