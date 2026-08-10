@@ -42,8 +42,8 @@ ref_image_ts_flag: 0
 # Kalman filter
 var_x: 30
 var_y: 30   
-var_vx: 8000
-var_vy: 8000
+var_vx: 50000 #was: 8000
+var_vy: 50000 #was: 8000
 var_lambda_1: 5
 var_lambda_2: 5
 var_theta: 0.5
