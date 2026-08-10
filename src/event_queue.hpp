@@ -1,0 +1,80 @@
+#pragma once
+
+#include "../../gen4/common/sepia.hpp"
+
+#include <condition_variable>
+#include <deque>
+#include <mutex>
+#include <vector>
+
+// A bounded queue of event batches shared between the camera's decode
+// thread (producer) and a processing thread (consumer).
+//
+// Batches, not individual events: at high event rates, locking on every
+// single event would dominate CPU time. Instead the producer accumulates
+// events for the duration of one before_buffer/after_buffer cycle (one USB
+// packet's worth) and pushes the whole vector at once.
+//
+// Bounded, with drop-oldest-on-full: if the consumer falls behind, we drop
+// the oldest backlog rather than blocking the producer (blocking the
+// producer would back up into the camera's own USB fifo and start
+// dropping raw packets anyway - better to drop already-decoded batches
+// here, where you can at least count/log it).
+class event_queue {
+    public:
+    explicit event_queue(std::size_t max_batches) : _max_batches(max_batches) {}
+
+    // Called from the camera thread. Takes ownership of the batch (moves
+    // it), leaving the caller's vector empty but with its capacity intact
+    // for reuse.
+    void push(std::vector<sepia::dvs_event>&& batch) {
+        if (batch.empty()) {
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            if (_batches.size() >= _max_batches) {
+                ++_dropped_batches;
+                _batches.pop_front();
+            }
+            _batches.push_back(std::move(batch));
+        }
+        _condition_variable.notify_one();
+    }
+
+    // Called from the processing thread. Blocks until a batch is
+    // available or the queue is stopped, then returns true with the batch
+    // moved into `batch`. Returns false only when stopped and empty.
+    bool pop(std::vector<sepia::dvs_event>& batch) {
+        std::unique_lock<std::mutex> lock(_mutex);
+        _condition_variable.wait(lock, [&] { return !_batches.empty() || _stopped; });
+        if (_batches.empty()) {
+            return false;
+        }
+        batch = std::move(_batches.front());
+        _batches.pop_front();
+        return true;
+    }
+
+    // Wakes up a blocked pop() and makes future pop() calls return false
+    // once the queue is drained, so the processing thread can exit.
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _stopped = true;
+        }
+        _condition_variable.notify_all();
+    }
+
+    std::size_t dropped_batches() const {
+        return _dropped_batches;
+    }
+
+    private:
+    std::size_t _max_batches;
+    std::deque<std::vector<sepia::dvs_event>> _batches;
+    std::mutex _mutex;
+    std::condition_variable _condition_variable;
+    bool _stopped = false;
+    std::size_t _dropped_batches = 0;
+};
