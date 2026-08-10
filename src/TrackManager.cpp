@@ -257,6 +257,8 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
                 continue;
             }
             else {
+                if(!output_tracks[j]->active) continue; // Skip inactive tracks
+                
                 // Read the state
                 Eigen::Vector<double, 10> x_hat_1 = output_tracks[i]->state().transpose();
                 Eigen::Vector<double, 10> x_hat_2 = output_tracks[j]->state().transpose();
@@ -279,7 +281,7 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
 
     // Deleted tracks
     for (int i = deleted_IDs_temp.size() - 1; i >= 0; i--){
-        deleted_IDs.push_back(i);
+        deleted_IDs.push_back(deleted_IDs_temp[i]);
         deleteTrack(output_tracks, deleted_IDs_temp[i]); 
         // std::cout << "Uh oh\n";       
     }
