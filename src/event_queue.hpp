@@ -52,6 +52,7 @@ class event_queue {
         }
         batch = std::move(_batches.front());
         _batches.pop_front();
+        ++_pushed_batches;
         return true;
     }
 
@@ -68,6 +69,9 @@ class event_queue {
     std::size_t dropped_batches() const {
         return _dropped_batches;
     }
+    std::size_t pushed_batches() const {
+        return _pushed_batches;
+    }
 
     private:
     std::size_t _max_batches;
@@ -76,4 +80,5 @@ class event_queue {
     std::condition_variable _condition_variable;
     bool _stopped = false;
     std::size_t _dropped_batches = 0;
+    std::size_t _pushed_batches = 0;
 };

@@ -364,7 +364,7 @@ namespace processing {
             }
             
             // update the reconstructed-image pixel this event touched
-            high_pass(ts, c, r, p, params.alpha);
+            //high_pass(ts, c, r, p, params.alpha);
 
             // Whenever the timestamp advances, decide whether the
             // previous time-slot should be marked as "had an associated event" for logging purposes
@@ -531,13 +531,13 @@ namespace processing {
 
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
-            if (params.publish_framerate > 0 && ts > t_next_publish) {
-                high_pass_global(ts, params.alpha);
-                display(
-                    dispParams, params, ts, output_video, output_video_ref, image_ref_ts, p,
-                    track_manager->getTracks());
-                t_next_publish = ts + (1.0 / params.publish_framerate);
-            }
+            //if (params.publish_framerate > 0 && ts > t_next_publish) {
+            //    high_pass_global(ts, params.alpha);
+            //    display(
+            //        dispParams, params, ts, output_video, output_video_ref, image_ref_ts, p,
+            //        track_manager->getTracks());
+            //    t_next_publish = ts + (1.0 / params.publish_framerate);
+            //}
         }
     }
 

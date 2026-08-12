@@ -120,7 +120,8 @@ int main(int argc, char* argv[]) {
 
     while (running.load()) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::cout << "queue dropped " << queue.dropped_batches() << " batches so far\n";
+        std::cout << "queue dropped " << queue.dropped_batches() << "/" << queue.pushed_batches() << " batches so far\n";
+        //std::cout << "queue pushed " << queue.pushed_batches() << " batches total\n";
     }
 
     // Stop the camera first (destructor joins its threads and stops

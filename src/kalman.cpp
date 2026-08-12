@@ -174,16 +174,16 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
 
   // // Write state when we reach a new timestamp
-  if (dt > 0){
+  //if (dt > 0){
     // std::cout << std::fixed <<  dt << std::endl;
     // // TEMP - write position of associated track
-    states_txt_ << std::fixed << std::setprecision(7);
-    states_txt_ << track_id << "," << ts_last[id];
+    //states_txt_ << std::fixed << std::setprecision(7);
+    //states_txt_ << track_id << "," << ts_last[id];
     // std::cout << track_id << "," << ts_last[id] << std::endl;
-    states_txt_ << std::fixed << std::setprecision(3);
-    for (int i = 0; i < 2; ++i){
-      states_txt_ << "," << x_hat(0, i);
-    }
+    //states_txt_ << std::fixed << std::setprecision(3);
+    //for (int i = 0; i < 2; ++i){
+    //  states_txt_ << "," << x_hat(0, i);
+    //}
     // for (int i = 0; i < 10; ++i){
     //   states_txt_ << "," << x_hat(0, i);
     // }
@@ -195,14 +195,14 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
     //       if (!(i == 3 && j == 3)) states_txt_ << ','; // space separator, no trailing space at end
     //   }
     // }
-    states_txt_ << std::endl;
-  }
+    //states_txt_ << std::endl;
+  //}
 
 
   // If dt > 0, check if we have reached the downsample count and process if necessary.
-  if (dt > 0){
+  //if (dt > 0){
     // If greater than step, write predicted and updated value finishing at the previous timestep.
-    if (equiv_measurement_count >= equiv_measurement_step){
+    //if (equiv_measurement_count >= equiv_measurement_step){
       //------------------------------------------------//
       // Write predicted state
       //blob_measurements_txt_ << std::fixed << std::setprecision(12);
@@ -233,26 +233,26 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
 
       //------------------------------------------------//
       // Reset counter
-      equiv_measurement_count = 0;
+      //equiv_measurement_count = 0;
      
       // Reset predicted state to the current estimate to start next iteration
-      x_hat_pred = x_hat;
-      P_pred = P;
-    }
+    //  x_hat_pred = x_hat;
+    //  P_pred = P;
+    //}
 
     // Otherwise increment the counter (processing a new event timestamp)
-    else {
-      equiv_measurement_count ++; 
-    }
+    //else {
+      //equiv_measurement_count ++; 
+    //}
 
-  }
+  //}
 
 
   //------------------------------------------------//
   //------------------------------------------------//
   //------------------------------------------------//
-  double dt_alpha = 0.95 ;
-  dt_moving_avg = (dt_alpha) *  dt_moving_avg + (1-dt_alpha)*dt;
+  //double dt_alpha = 0.95 ;
+  //dt_moving_avg = (dt_alpha) *  dt_moving_avg + (1-dt_alpha)*dt;
 
 
   ts_last[id] = e(2);
@@ -264,6 +264,9 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
   //-----              PREDICTION              -----//
   //------------------------------------------------//
+
+  // NOTE: CHANGE THESE TO FIXED SIZE ARRAYS!
+
   // Propagate updated state (predict and update)
   x_hat.block(id, 0, 1, n_state) =
       (F.block(id * n_state, 0, n_state, n_state) * x_hat.block(id, 0, 1, n_state).transpose())
