@@ -28,16 +28,25 @@ pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 
 # --- Executable ------------------------------------------------------------
 
-add_executable(aemot_realtime
-    src/camera_driver.cpp
+set(SHARED_SOURCES
     src/processing.cpp
     src/TrackManager.cpp
     src/kalman.cpp
     src/SAEdetector.cpp
-    src/SAE.cpp
     src/decoding.cpp
     src/parameters_decoding.cpp
     src/parameters.cpp
+    src/SAE.cpp
+)
+
+add_executable(aemot_realtime
+    src/camera_driver.cpp
+    ${SHARED_SOURCES}
+)
+
+add_executable(aemot_replay
+    src/file_driver.cpp
+    ${SHARED_SOURCES}
 )
 
 # gen4/common is a sibling of this project's own root (aemot_realtime/), holding
@@ -47,12 +56,23 @@ add_executable(aemot_realtime
 target_include_directories(aemot_realtime PRIVATE
     ${CMAKE_SOURCE_DIR}/../gen4/common
 )
+target_include_directories(aemot_replay PRIVATE
+    ${CMAKE_SOURCE_DIR}/../gen4/common
+)
 
 target_link_libraries(aemot_realtime PRIVATE
     ${OpenCV_LIBS}
     Eigen3::Eigen
     yaml-cpp::yaml-cpp
     PkgConfig::LIBUSB
+    Threads::Threads
+)
+
+# replay doesn't require libusb at all
+target_link_libraries(aemot_replay PRIVATE
+    ${OpenCV_LIBS}
+    Eigen3::Eigen
+    yaml-cpp::yaml-cpp
     Threads::Threads
 )
 

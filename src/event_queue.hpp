@@ -14,11 +14,16 @@
 // The producer accumulates events for the duration of one before_buffer/after_buffer cycle
 // (one USB packet's worth) and pushes the whole vector at once.
 //
-// Bounded, with drop-oldest-on-full: if the consumer falls behind, we drop
-// the oldest backlog rather than blocking the producer (blocking the
-// producer would back up into the camera's own USB fifo and start
-// dropping raw packets anyway - better to drop already-decoded batches
-// here, where you can at least count/log it).
+// Two different push policies are offered, for two different producers:
+//   - push(): drop-oldest-on-full, non-blocking. Used by the live camera -
+//     blocking would back up into the camera's own USB fifo and start
+//     dropping raw packets anyway, so better to drop already-decoded
+//     batches here, where you can at least count/log it.
+//   - push_blocking(): waits for room instead of dropping. Used by file
+//     replay, where completeness matters more than latency - this is what
+//     makes replay run only as fast as `processing` can keep up with,
+//     never losing an event.
+
 class event_queue {
     public:
     explicit event_queue(std::size_t max_batches) : _max_batches(max_batches) {}
@@ -41,6 +46,25 @@ class event_queue {
         _condition_variable.notify_one();
     }
 
+    // Called from a replay/file-reading thread. Blocks until there is room
+    // in the queue (or the queue is stopped, in which case it gives up and
+    // returns without pushing - avoids deadlocking a producer against a
+    // consumer that has already shut down). Never drops a batch.
+    void push_blocking(std::vector<sepia::dvs_event>&& batch) {
+        if (batch.empty()) {
+            return;
+        }
+        {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _condition_variable.wait(lock, [&] { return _batches.size() < _max_batches || _stopped; });
+            if (_stopped) {
+                return;
+            }
+            _batches.push_back(std::move(batch));
+        }
+        _condition_variable.notify_all();
+    }
+
     // Called from the processing thread. Blocks until a batch is
     // available or the queue is stopped, then returns true with the batch
     // moved into `batch`. Returns false only when stopped and empty.
@@ -52,12 +76,16 @@ class event_queue {
         }
         batch = std::move(_batches.front());
         _batches.pop_front();
+        // A pop() just freed up a slot - wake any push_blocking() producer
+        // that might be waiting on "is there room yet".
+        _condition_variable.notify_all();
         ++_pushed_batches;
         return true;
     }
 
-    // Wakes up a blocked pop() and makes future pop() calls return false
-    // once the queue is drained, so the processing thread can exit.
+    // Wakes up a blocked pop()/push_blocking() and makes future pop() calls
+    // return false once the queue is drained, so consumer/producer threads
+    // can both exit.
     void stop() {
         {
             std::lock_guard<std::mutex> lock(_mutex);
