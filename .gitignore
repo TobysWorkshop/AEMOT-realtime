@@ -1,7 +1,6 @@
 *.csv
 
 
-data/
 build/
 
 .vscode/
