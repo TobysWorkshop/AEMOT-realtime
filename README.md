@@ -95,6 +95,8 @@ Now everything is ready to use!
 NOTE: the above has now been changed to rely on the includes in the CMakelists.txt, rather than hard-coded #includes in the individual .cpp files.
 
 ## How to use
+This project provides two ways of running the system: realtime streaming from a Gen4 camera, and replaying from a .es file. 
+
 Once you've built the project, you can run it using the following command (from `aemot_realtime/`):
 ```bash
 cd ~working_directory/aemot_realtime

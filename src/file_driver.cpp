@@ -20,6 +20,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <fstream>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -41,14 +42,20 @@ int main(int argc, char* argv[]) {
     const std::string config_name = argv[1];
     const std::string es_path = argv[2];
 
+    std::cout << "Loading: configs/" << config_name << ".yaml...\n";
+
     std::signal(SIGINT, handle_sigint);
 
     // Same queue type, same bound, as the live camera path
     event_queue queue(256);
+    frame_queue frames(3);
+    std::promise<bool> setup_promise;
 
     // Same worker-thread pattern as camera_driver.cpp: this is the only thread that calls into processing:: code.
     std::thread worker([&]() {
-        if (!processing::setup(config_name)) {
+        const bool ok = processing::setup(config_name, frames);
+        setup_promise.set_value(ok);
+        if (!ok) {
             std::cerr << "processing setup failed, aborting\n";
             running.store(false);
             return;
@@ -58,6 +65,22 @@ int main(int argc, char* argv[]) {
             processing::process_batch(batch);
         }
         processing::teardown();
+    });
+
+    if (!setup_promise.get_future().get()) {
+        queue.stop();
+        worker.join();
+        return 1;
+    }
+
+    // seperate thread for the renderer, so that it can run at its own pace and not block the processing thread
+    std::thread render_thread([&]() {
+        processing::render_setup();
+        frame_job job;
+        while (frames.pop(job)) {
+            processing::render_frame(job);
+        }
+        processing::render_teardown();
     });
 
     // Accumulates events read from the file into fixed-size batches before
@@ -116,6 +139,8 @@ int main(int argc, char* argv[]) {
         running.store(false);
         queue.stop();
         worker.join();
+        frames.stop();
+        render_thread.join();
         return 1;
     }
 
@@ -140,6 +165,8 @@ int main(int argc, char* argv[]) {
     // be up to `queue`'s capacity worth of batches waiting), then shut down.
     queue.stop();
     worker.join();
+    frames.stop();
+    render_thread.join();
 
     return 0;
 }

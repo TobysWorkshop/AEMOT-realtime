@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 #include <queue>
+#include <stdexcept>
+#include <unistd.h>
 
 namespace processing {
 
@@ -37,9 +39,9 @@ namespace processing {
         std::unique_ptr<TrackManager> track_manager;
         std::unique_ptr<SAEdetector> detector;
 
+        frame_queue* frame_output = nullptr;
+
         // ---- display / video output ----
-        std::vector<cv::Mat> output_video;
-        std::vector<cv::Mat> output_video_ref;
         std::vector<double> image_ref_ts;
         cv::VideoWriter writer_ref, writer;
         std::string output_image_path;
@@ -120,82 +122,113 @@ namespace processing {
         ts_array.setTo(ts); // mark every pixel as up to date as of ts
     };
 
-    // ---- DISPLAY RENDERER --- //
-    // Converts the current reconstructed image into a viewable 8-bit RGB image.
-    // Draws an ellipse for each track (position/size/orientation taken straight from that track's Kalman state).
-    // Optionally writes the frame to a video file/png.
-    void display(
-                const DisplayParams &dispParams, 
-                Parameters &params,
-                const double &ts,
-                std::vector<cv::Mat> &output_video,
-                std::vector<cv::Mat> &output_video_ref,
-                std::vector<double> &image_ref_ts, 
-                int p,
-                std::vector<KalmanFilter *> current_tracks)
-    {
-        cv::Mat image, ref_image;
-        cv::exp(log_intensity_state, image); // undo the log: back to linear "intensity"
+    // ---- FRAME PUBLISHING ---- //
+    // Builds a self-contained snapshot of the current visual state and
+    // hands it to the render thread. Called from process_batch(), on the
+    // PROCESSING thread - this function must stay cheap and must never
+    // touch OpenCV's GUI/window/video-writer APIs; all of that lives in
+    // render_frame() on the render thread instead.
+    void publish_frame(double ts) {
+        if (frame_output == nullptr) {
+            return; // shouldn't happen if setup() succeeded, but don't crash if it does
+        }
+        frame_job job;
+        job.log_intensity_snapshot = log_intensity_state.clone(); // deep copy - render thread gets its own
+        job.ts = ts;
+        auto tracks = track_manager->getTracks();
+        job.tracks.reserve(tracks.size());
+        for (auto* track : tracks) {
+            // ->state() and ->P_x() already return copies (Eigen::MatrixXd
+            // by value), not references into the live filter - safe to
+            // capture here even though this specific pool slot could be
+            // reset() and reused for a different physical track before the
+            // render thread gets around to drawing this frame.
+            job.tracks.push_back(track_snapshot{track->state(), track->P_x(), track->validated == 1});
+        }
+        frame_output->push(std::move(job));
+    }
+
+    // RENDER AND SAVE ONE FRAME - RENDER THREAD ONLY.
+    // Converts a snapshot's reconstructed image into a viewable 8-bit RGB
+    // image. Draws an ellipse for each snapshotted track. Optionally
+    // writes the frame to a video file/png. Never reads shared tracking
+    // state - everything it needs is in `job`.
+    void render_frame(const frame_job& job) {
+        cv::Mat image;
+        cv::exp(job.log_intensity_snapshot, image); // undo the log: back to linear "intensity"
         double minVal = 1.4;
         double maxVal = 0.4;
         // NOTE: minVal > maxVal here, so this normalization is intentionally inverted
         // (produces a particular contrast look for this sensor's typical value range).
         image = (image - minVal) / (maxVal - minVal);
-        cv::Mat img(image.rows, image.cols, CV_64FC1, (char *)image.data);
+        cv::Mat img(image.rows, image.cols, CV_64FC1, (char*)image.data);
         img.convertTo(img, CV_8U, 255.0 / 1.0); // scale to 8-bit grayscale
         cv::Mat cimg;
         cv::cvtColor(img, cimg, cv::COLOR_GRAY2RGB); // convert to RGB so we can draw colored ellipses
-
-        for (int i = 0; i < current_tracks.size(); i++)
-        {
-            x_hat_track = current_tracks[i]->state();
-            P_track = current_tracks[i]->P_x();
-
+ 
+        for (const auto& track : job.tracks) {
+            const auto& x_hat_track = track.state;
+            const auto& P_track = track.P;
+ 
             // State index 6 holds an orientation angle in radians; convert to degrees (57.295 ~= 180/pi) and wrap into [0, 360)
             double rotationAngle = x_hat_track(6) * 57.295;
             rotationAngle = std::fmod(rotationAngle, 360.0);
-            if (rotationAngle < 0.0)
-            {
+            if (rotationAngle < 0.0) {
                 rotationAngle += 360.0;
             }
-
+ 
             // Confirmed ("validated") tracks are drawn in solid red; unvalidated "candidate" tracks
             // are optionally drawn in blue if the config asks to show candidates.
-            if (current_tracks[i]->validated == 1){
-                cv::ellipse(cimg, cv::Point(x_hat_track(0), x_hat_track(1)),
-                            cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
-                            rotationAngle, 0, 360, cv::Scalar(0,0,255), 2, cv::LINE_AA);
+            if (track.validated) {
+                cv::ellipse(
+                    cimg,
+                    cv::Point(x_hat_track(0), x_hat_track(1)),
+                    cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
+                    rotationAngle,
+                    0,
+                    360,
+                    cv::Scalar(0, 0, 255),
+                    2,
+                    cv::LINE_AA);
+            } else if (params.f_show_candidates) {
+                cv::ellipse(
+                    cimg,
+                    cv::Point(x_hat_track(0), x_hat_track(1)),
+                    cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
+                    rotationAngle,
+                    0,
+                    360,
+                    cv::Scalar(255, 0, 0),
+                    2,
+                    cv::LINE_AA);
             }
-            else if (params.f_show_candidates) {
-                cv::ellipse(cimg, cv::Point(x_hat_track(0), x_hat_track(1)),
-                            cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
-                            rotationAngle, 0, 360, cv::Scalar(255,0,0), 2, cv::LINE_AA);
-            }
-
+ 
             // Optionally overlay a second ellipse showing positional UNCERTAINTY (covariance),
             // scaled up by 50x so it's visible, in blue.
-            if (dispParams.disp_covariance_flag)
-            {
+            if (dispParams.disp_covariance_flag) {
                 cv::ellipse(
-                    cimg, cv::Point(x_hat_track(0), x_hat_track(1)),
+                    cimg,
+                    cv::Point(x_hat_track(0), x_hat_track(1)),
                     cv::Size(50 * P_track(0, 0), 50 * P_track(1, 1)),
-                    x_hat_track(6) * (180.0 / M_PI), 0, 360, cv::Scalar(255, 0, 0), 1,
+                    x_hat_track(6) * (180.0 / M_PI),
+                    0,
+                    360,
+                    cv::Scalar(255, 0, 0),
+                    1,
                     cv::LINE_AA);
             }
         }
-
+ 
         cv::imshow("Video", cimg); // show the reconstructed+annotated frame
         cv::waitKey(1);
-
+ 
         // --- Save outputs ---
-        if (params.save_video_flag && writer.isOpened())
-        {
+        if (params.save_video_flag && writer.isOpened()) {
             writer.write(cimg);
         }
-        if (dispParams.save_image_flag)
-        {
+        if (dispParams.save_image_flag) {
             std::string output_image_name = output_image_path + "/image" + std::to_string(image_count) + ".png";
-            cv::imwrite(output_image_name, cimg); // ---- writes a PNG to disk ----
+            cv::imwrite(output_image_name, cimg);
         }
         image_count += 1;
     }
@@ -203,7 +236,9 @@ namespace processing {
 
     // ---- SETUP() ---- //
     // Runs once, before the first packet arrives.
-    bool setup(const std::string &config_name) {
+    bool setup(const std::string &config_name, frame_queue& frames) {
+        frame_output = &frames;
+
         // PARSE THE CONFIG //
         try {
             // configs/ is a sister directory of src/ (where this binary is built).
@@ -228,36 +263,10 @@ namespace processing {
         int n_state = params.n_state;
         input_event_path = params.input_folder_path + params.input_data_name; // base path (no extension) for this dataset
 
-        // SET UP DISPLAY WINDOW //
-        cv::namedWindow("Video");
-        cv::resizeWindow("Video", params.width, params.height);
-        std::string output_video_path = input_event_path + "_video.avi";
-        if (params.save_video_flag)
-        {
-            // Prefer a codec/backend that works on Ubuntu without GStreamer drama
-            int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-            writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
-
-            if (!writer.isOpened()) {
-                // fallback
-                fourcc = cv::VideoWriter::fourcc('X', 'V', 'I', 'D');
-                writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
-            }
-            if (!writer.isOpened()) {
-                std::cerr << "ERROR: could not open VideoWriter for " << output_video_path << std::endl;
-                params.save_video_flag = false;
-            } else {
-                std::cerr << "VideoWriter opened: " << output_video_path << std::endl;
-            }
-        }
-
-        // If saving individual frame images was requested, create the output folder.
-        if (params.save_image_flag)
-        {
-            std::filesystem::path path(input_event_path + "/output_img");
-            std::filesystem::create_directories(path);
-            output_image_path = path.string();
-        }
+        // NOTE: display window / video writer / output-image-folder setup
+        // used to happen right here. It's now in render_setup(), which
+        // runs on the dedicated render thread instead - see processing.hpp
+        // for why (keeping every OpenCV GUI/IO call on one thread).
 
         // INITALISE SAE-DETECTOR //
         detector = std::make_unique<SAEdetector>(
@@ -321,11 +330,55 @@ namespace processing {
             params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
         );
 
-        // RENDER INITIAL EMPTY FRAME //
-        display(dispParams, params, 0.0, output_video, output_video_ref, image_ref_ts, 0, track_manager->getTracks());
-
         return true;
     } // end setup()
+
+    // Runs once, before the first frame, on the RENDER thread. Must not be
+    // called until setup() (above) has already returned true - reads
+    // params/dispParams, which setup() is what populates.
+    void render_setup() {
+        cv::namedWindow("Video");
+        cv::resizeWindow("Video", params.width, params.height);
+        std::string output_video_path = input_event_path + "_video.avi";
+        if (params.save_video_flag) {
+            // Prefer a codec/backend that works on Ubuntu without GStreamer drama
+            int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+            writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
+ 
+            if (!writer.isOpened()) {
+                // fallback
+                fourcc = cv::VideoWriter::fourcc('X', 'V', 'I', 'D');
+                writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
+            }
+            if (!writer.isOpened()) {
+                std::cerr << "ERROR: could not open VideoWriter for " << output_video_path << std::endl;
+                params.save_video_flag = false; // only ever touched from this thread - see the NOTE by its declaration
+            } else {
+                std::cerr << "VideoWriter opened: " << output_video_path << std::endl;
+            }
+        }
+ 
+        // If saving individual frame images was requested, create the output folder.
+        if (params.save_image_flag) {
+            std::filesystem::path path(input_event_path + "/output_img");
+            std::filesystem::create_directories(path);
+            output_image_path = path.string();
+        }
+ 
+        // RENDER INITIAL EMPTY FRAME //
+        frame_job empty_job;
+        empty_job.log_intensity_snapshot = log_intensity_state.clone();
+        empty_job.ts = 0.0;
+        render_frame(empty_job);
+    }
+ 
+    // Runs once, on the render thread, after the frame_queue is stopped and drained.
+    void render_teardown() {
+        if (writer.isOpened()) {
+            writer.release();
+        }
+        cv::destroyWindow("Video");
+    }
 
 
     // ---- EVENT PROCESSOR LOGIC ---- //
@@ -364,7 +417,7 @@ namespace processing {
             }
             
             // update the reconstructed-image pixel this event touched
-            //high_pass(ts, c, r, p, params.alpha);
+            high_pass(ts, c, r, p, params.alpha);
 
             // Whenever the timestamp advances, decide whether the
             // previous time-slot should be marked as "had an associated event" for logging purposes
@@ -394,48 +447,59 @@ namespace processing {
                 {
                     dist_min = distance;
                     id = i; // remember the index of the closest track
+
                 }
             }
 
-            if (any_active)
+            // This is a simpler replacement to the commented out block below
+            // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
+            // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
+            if (dist_min < 50)
             {
-                // Pull out the closest track's full state/covarience to check if its feasible to now associate it
-                x_hat_track = track_manager->getTrack(id)->state();
-                P_track = track_manager->getTrack(id)->P_x();
-                double ts_last_for_gamma = track_manager->getTrack(id)->get_ts_last_for_gamma();
-                double dist_threshold_track = track_manager->getTrack(id)->get_dist_threshold();
+                f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
+                track_manager->getTrack(id)->update(e, 0, p);
+            }
+            
+            // REMOVE THIS:
+            //if (any_active) /// NOTE: change this to check box rather than circle (simplify it)
+            //{
+            //    // Pull out the closest track's full state/covarience to check if its feasible to now associate it
+            //    x_hat_track = track_manager->getTrack(id)->state();
+            //    P_track = track_manager->getTrack(id)->P_x();
+            //    double ts_last_for_gamma = track_manager->getTrack(id)->get_ts_last_for_gamma();
+            //    double dist_threshold_track = track_manager->getTrack(id)->get_dist_threshold();
 
-                distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
+            //    distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
 
                 // Check the feasibility by computing an adaptive association-distance threshold
                 // We'll only recompute the threshold if the track's position is confident (has low covariance)
                 // The threshold size adapts towards 2.5x the target's estimated width/height (whichever is bigger)
                 // This is blended smoothly over timeusing exponential decay factor gamma for how long it's been since the last track update
-                if ((P_track(0, 0) < 3) && (P_track(1, 1) < 3))
-                {
-                    double gamma = std::exp(-alpha_dist * (ts - ts_last_for_gamma));
+            //    if ((P_track(0, 0) < 3) && (P_track(1, 1) < 3))
+            //    {
+            //        double gamma = std::exp(-alpha_dist * (ts - ts_last_for_gamma));
 
-                    if (x_hat_track(4) > x_hat_track(5)) {
-                        dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(4);
-                    } else {
-                        dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(5);
-                    }
+            //        if (x_hat_track(4) > x_hat_track(5)) {
+            //            dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(4);
+            //        } else {
+            //            dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(5);
+            //        }
 
                     // Never let the gate shrink below the configured minimum.
-                    if (dist_threshold_track < params.dist_threshold) {
-                        dist_threshold_track = params.dist_threshold;
-                    }
+            //        if (dist_threshold_track < params.dist_threshold) {
+            //            dist_threshold_track = params.dist_threshold;
+            //        }
 
-                    track_manager->getTrack(id)->update_distance_threshold(dist_threshold_track);
-                }
+            //        track_manager->getTrack(id)->update_distance_threshold(dist_threshold_track);
+            //    }
 
                 // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-                if (distance < dist_threshold_track)
-                {
-                    f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
-                    track_manager->getTrack(id)->update(e, 0, p);
-                }
-            }
+            //    if (distance < dist_threshold_track)
+            //    {
+            //        f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
+            //        track_manager->getTrack(id)->update(e, 0, p);
+            //    }
+            //}
             // end nearest-neighbour data association step
 
             f_associated_this_ts = (f_associated_this_ts | f_event_associated);
@@ -462,7 +526,8 @@ namespace processing {
             {
                 detection_event_count = 0;
                 // perform the detection
-                int detector_output = detector->performDetection_dt({(double) c, (double) r, ts, (double) p});
+                //int detector_output = detector->performDetection_dt({(double) c, (double) r, ts, (double) p});
+                int detector_output = detector->performDetection({(double) c, (double) r, ts, (double) p});
 
                 if (detector_output == 1) // confirmed candidate! Move to start a new track
                 {
@@ -531,13 +596,11 @@ namespace processing {
 
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
-            //if (params.publish_framerate > 0 && ts > t_next_publish) {
-            //    high_pass_global(ts, params.alpha);
-            //    display(
-            //        dispParams, params, ts, output_video, output_video_ref, image_ref_ts, p,
-            //        track_manager->getTracks());
-            //    t_next_publish = ts + (1.0 / params.publish_framerate);
-            //}
+            if (params.publish_framerate > 0 && ts > t_next_publish) {
+                high_pass_global(ts, params.alpha);
+                publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
+                t_next_publish = ts + (1.0 / params.publish_framerate);
+            }
         }
     }
 

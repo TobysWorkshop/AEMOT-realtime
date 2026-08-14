@@ -11,7 +11,9 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <future>
 #include <iostream>
+#include <string>
 #include <thread>
 
 std::atomic<bool> running{true};
@@ -51,11 +53,19 @@ int main(int argc, char* argv[]) {
     // of more latency and memory when it's backed up.
     event_queue queue(256);
 
+    // seperate queue for renderer
+    frame_queue frames(3);
+
+    std::promise<bool> setup_promise;
+
     // Worker thread: this is the ONLY thread that calls into your
     // processing code, so process_batch never needs to worry about
     // concurrent calls.
     std::thread worker([&]() {
-        if (!processing::setup(config_name)) {
+        const bool ok = processing::setup(config_name, frames);
+        setup_promise.set_value(ok);
+
+        if (!ok) {
             std::cerr << "processing setup failed, aborting\n";
             running.store(false);
             return;
@@ -66,6 +76,23 @@ int main(int argc, char* argv[]) {
         }
         processing::teardown();
     });
+
+    if (!setup_promise.get_future().get()) {
+        queue.stop();
+        worker.join();
+        return 1;
+    }
+
+    // renderer thread
+    std::thread render_thread([&]() {
+        processing::render_setup();
+        frame_job job;
+        while (frames.pop(job)) {
+            processing::render_frame(job);
+        }
+        processing::render_teardown();
+    });
+
 
     // Accumulates events for the current USB packet. Captured by
     // reference in the lambdas below; cleared and handed off in
@@ -130,6 +157,8 @@ int main(int argc, char* argv[]) {
     camera.reset();
     queue.stop();
     worker.join();
+    frames.stop();
+    render_thread.join();
 
     return 0;
 }

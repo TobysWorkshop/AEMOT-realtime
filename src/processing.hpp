@@ -1,5 +1,6 @@
 #pragma once
 
+#include "frame_queue.hpp"
 #include "sepia.hpp"
 
 #include <string>
@@ -20,7 +21,7 @@ namespace processing {
     // Returns false if the config could not be loaded. Callers MUST check
     // this and not call process_batch() if it returns false - track_manager
     // and detector are left null in that case.
-    bool setup(const std::string& config_name);
+    bool setup(const std::string& config_name, frame_queue& frames);
 
     // Called once per batch of events pulled off the camera queue, in
     // order, one batch at a time, on the same thread that called setup().
@@ -32,5 +33,29 @@ namespace processing {
     // Called once after the camera stops (on the same thread as setup()/
     // process_batch()). Releases the video writer and reports totals.
     void teardown();
+
+    
+    // ---- Render thread: all OpenCV GUI/video-writer calls live here ----
+    //
+    // These three must all run on the SAME thread as each other (a
+    // dedicated render thread, separate from the one running setup()/
+    // process_batch()/teardown() above) - and that thread must not be the
+    // one running process_batch(), or you're back to blocking event
+    // processing on frame rendering. render_setup() must not be called
+    // until setup() (above) has already returned true, since it reads
+    // config state (params/dispParams) setup() loaded.
+ 
+    // Opens the display window and video writer (if configured), and
+    // renders the initial empty frame - the render-thread equivalent of
+    // what setup() used to do directly.
+    void render_setup();
+ 
+    // Draws and optionally saves/writes one frame from a self-contained
+    // snapshot - never reads shared tracking state directly.
+    void render_frame(const frame_job& job);
+ 
+    // Releases the video writer and destroys the window.
+    void render_teardown();
+
 
 } // namespace processing
