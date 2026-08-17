@@ -457,7 +457,7 @@ namespace processing {
             // This is a simpler replacement to the commented out block below
             // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min < 50)
+            if (dist_min < 100)
             {
                 //debug
                 std::cout << "Distance threshold met! Absorbing into existing track.\n";
@@ -528,7 +528,7 @@ namespace processing {
             }
 
             if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
-                (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
                 (detection_event_count > params.SAE_operation_rate)) 
             {
                 
@@ -540,6 +540,9 @@ namespace processing {
                 track_manager->createNewTrack({(double)c, (double)r, ts});
                 std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
                           << " active=" << track_manager->activeCount() << std::endl;
+            } else {
+                //debug
+                std::cout << "Conditions for new track not met. " << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
             }
 
 
