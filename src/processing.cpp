@@ -169,53 +169,63 @@ namespace processing {
         for (const auto& track : job.tracks) {
             const auto& x_hat_track = track.state;
             const auto& P_track = track.P;
- 
-            // State index 6 holds an orientation angle in radians; convert to degrees (57.295 ~= 180/pi) and wrap into [0, 360)
+
+            // 1. Check ALL state variables including the angle at index 6
+            if (std::isnan(x_hat_track(0)) || std::isnan(x_hat_track(1)) ||
+                std::isnan(x_hat_track(4)) || std::isnan(x_hat_track(5)) || std::isnan(x_hat_track(6)) ||
+                std::isinf(x_hat_track(0)) || std::isinf(x_hat_track(1)) ||
+                std::isinf(x_hat_track(4)) || std::isinf(x_hat_track(5)) || std::isinf(x_hat_track(6))) {
+                continue; 
+            }
+
+            // Convert orientation angle to degrees safely
             double rotationAngle = x_hat_track(6) * 57.295;
             rotationAngle = std::fmod(rotationAngle, 360.0);
             if (rotationAngle < 0.0) {
                 rotationAngle += 360.0;
             }
- 
-            // Confirmed ("validated") tracks are drawn in solid red; unvalidated "candidate" tracks
-            // are optionally drawn in blue if the config asks to show candidates.
+
+            // Explicitly clamp values to avoid extreme overflows
+            int ellipse_w = std::max(0, cvRound(std::abs(x_hat_track(4))));
+            int ellipse_h = std::max(0, cvRound(std::abs(x_hat_track(5))));
+            cv::Point center_pt(cvRound(x_hat_track(0)), cvRound(x_hat_track(1)));
+
+            // Track state ellipse
             if (track.validated) {
-                cv::ellipse(
-                    cimg,
-                    cv::Point(x_hat_track(0), x_hat_track(1)),
-                    cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
-                    rotationAngle,
-                    0,
-                    360,
-                    cv::Scalar(0, 0, 255),
-                    2,
-                    cv::LINE_AA);
+                cv::ellipse(cimg, center_pt, cv::Size(ellipse_w, ellipse_h), rotationAngle, 0, 360, cv::Scalar(0, 0, 255), 2, cv::LINE_AA);
             } else if (params.f_show_candidates) {
-                cv::ellipse(
-                    cimg,
-                    cv::Point(x_hat_track(0), x_hat_track(1)),
-                    cv::Size(abs(x_hat_track(4)), abs(x_hat_track(5))),
-                    rotationAngle,
-                    0,
-                    360,
-                    cv::Scalar(255, 0, 0),
-                    2,
-                    cv::LINE_AA);
+                cv::ellipse(cimg, center_pt, cv::Size(ellipse_w, ellipse_h), rotationAngle, 0, 360, cv::Scalar(255, 0, 0), 2, cv::LINE_AA);
             }
- 
-            // Optionally overlay a second ellipse showing positional UNCERTAINTY (covariance),
-            // scaled up by 50x so it's visible, in blue.
+
+            // Uncertainty (covariance) ellipse
             if (dispParams.disp_covariance_flag) {
-                cv::ellipse(
-                    cimg,
-                    cv::Point(x_hat_track(0), x_hat_track(1)),
-                    cv::Size(50 * P_track(0, 0), 50 * P_track(1, 1)),
-                    x_hat_track(6) * (180.0 / M_PI),
-                    0,
-                    360,
-                    cv::Scalar(255, 0, 0),
-                    1,
-                    cv::LINE_AA);
+                if (!std::isnan(P_track(0, 0)) && !std::isnan(P_track(1, 1)) &&
+                    !std::isinf(P_track(0, 0)) && !std::isinf(P_track(1, 1))) {
+                    
+                    double cov_w_raw = 50.0 * std::sqrt(std::abs(P_track(0, 0)));
+                    double cov_h_raw = 50.0 * std::sqrt(std::abs(P_track(1, 1)));
+
+                    int cov_w = std::max(0, cvRound(cov_w_raw));
+                    int cov_h = std::max(0, cvRound(cov_h_raw));
+                    double cov_angle = x_hat_track(6) * (180.0 / M_PI);
+
+                    // DIAGNOSTIC PRINT: If it crashes on the next line, look at your console output!
+                    if (cov_w < 0 || cov_h < 0) {
+                        std::cout << "[CRASH PREVENTED] Invalid Covariance Size: " << cov_w << "x" << cov_h << std::endl;
+                        continue;
+                    }
+
+                    cv::ellipse(
+                        cimg,
+                        center_pt,
+                        cv::Size(cov_w, cov_h),
+                        cov_angle,
+                        0,
+                        360,
+                        cv::Scalar(255, 0, 0),
+                        1,
+                        cv::LINE_AA);
+                }
             }
         }
  
@@ -397,6 +407,9 @@ namespace processing {
             // event.y  -> height pixel coord
             // event.on -> true = ON, false = OFF
 
+            //debug
+            std::cout << "------------------------------------------\n";
+
             if (!have_first_ts) // assign t1 on first event
             {
                 t1 = static_cast<double>(event.t);
@@ -421,11 +434,11 @@ namespace processing {
 
             // Whenever the timestamp advances, decide whether the
             // previous time-slot should be marked as "had an associated event" for logging purposes
-            if (ts - t_last > 0)
-            {
-                f_write_position = f_associated_this_ts;
-                f_associated_this_ts = false;
-            }
+            //if (ts - t_last > 0)
+            //{
+            //    f_write_position = f_associated_this_ts;
+            //    f_associated_this_ts = false;
+            //}
 
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
@@ -457,7 +470,7 @@ namespace processing {
             // This is a simpler replacement to the commented out block below
             // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min < 100)
+            if (dist_min < 50)
             {
                 //debug
                 std::cout << "Distance threshold met! Absorbing into existing track.\n";
@@ -508,7 +521,7 @@ namespace processing {
             //}
             // end nearest-neighbour data association step
 
-            f_associated_this_ts = (f_associated_this_ts | f_event_associated);
+            //f_associated_this_ts = (f_associated_this_ts | f_event_associated);
 
             // AUTO_DETECTION OF NEW TARGETS //
             // If the event did NOT get associated to an existing track, then we treat it as either a noise or object-candidate event.
@@ -521,28 +534,32 @@ namespace processing {
                 //debug
                 std::cout << "Event NOT associated to existing track. Adding to detector.\n";
 
-                // we add this event to the detector waiting room, ready for the next detection attempt
-                //detector->addEvent({(double) c, (double) r, ts, (double) p});
+                // perform the SAE detection on this event
                 detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
                 detection_event_count++;
-            }
 
-            if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
-                (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
-                (detection_event_count > params.SAE_operation_rate)) 
-            {
-                
-                //debug
-                std::cout << "MAKING SAE DETECTION!\n";
-                
-                detection_event_count = 0;
- 
-                track_manager->createNewTrack({(double)c, (double)r, ts});
-                std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
-                          << " active=" << track_manager->activeCount() << std::endl;
-            } else {
-                //debug
-                std::cout << "Conditions for new track not met. " << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
+                // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
+                if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
+                    (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                    (detection_event_count > params.SAE_operation_rate)) 
+                {
+                    
+                    //debug
+                    std::cout << "MAKING SAE DETECTION!\n";
+                    
+                    detection_event_count = 0;
+    
+                    track_manager->createNewTrack({(double)c, (double)r, ts});
+                    std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                            << " active=" << track_manager->activeCount() << std::endl;
+                } else {
+                    if (detector_output == 1) {
+                        std::cerr << "[SAE] SAE returned 1, but conditions for new track not met." << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
+                    } else {
+                        std::cerr << "[SAE] SAE returned " << detector_output << ", not creating new track.\n";
+                    }
+                }
+
             }
 
 

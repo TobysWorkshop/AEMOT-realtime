@@ -1,5 +1,5 @@
 
-input_folder_path: "~/AEMOT_ROS2"
+input_folder_path: "~/aemot_realtime"
 input_data_name: "nan" ##unused
 
 ref_image_ts_path: ""
@@ -90,11 +90,11 @@ f_show_candidates             : 1
 
 # Line detector
 SAE_ksize                     : 7
-SAE_alpha                     : 5
+SAE_alpha                     : 3
 SAE_operation_rate            : 200 # how many events between each operation
-SAE_detection_threshold       : 0.9 # val = cos(theta)
-SAE_min_active_pixels         : 40
-SAE_min_contributions         : 40
+SAE_detection_threshold       : 0.75 # val = cos(theta)
+SAE_min_active_pixels         : 10
+SAE_min_contributions         : 12
 SAE_min_detections_in_patch   : 40
 MAX_NUMBER_OF_TRACKS          : 100
 
