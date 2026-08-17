@@ -513,47 +513,67 @@ namespace processing {
             // AUTO_DETECTION OF NEW TARGETS //
             // If the event did NOT get associated to an existing track, then we treat it as either a noise or object-candidate event.
             // And so we must pass it to the SAEdetector to classify it
+            
+            int detector_output = -1;
+            
             if (!f_event_associated) // if the event hasn't been associated yet
             {
                 //debug
                 std::cout << "Event NOT associated to existing track. Adding to detector.\n";
 
                 // we add this event to the detector waiting room, ready for the next detection attempt
-                detector->addEvent({(double) c, (double) r, ts, (double) p});
+                //detector->addEvent({(double) c, (double) r, ts, (double) p});
+                detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
                 detection_event_count++;
             }
+
+            if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
+                (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                (detection_event_count > params.SAE_operation_rate)) 
+            {
+                
+                //debug
+                std::cout << "MAKING SAE DETECTION!\n";
+                
+                detection_event_count = 0;
+ 
+                track_manager->createNewTrack({(double)c, (double)r, ts});
+                std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                          << " active=" << track_manager->activeCount() << std::endl;
+            }
+
 
             // Only initiate a detection attempt when ALL of the following hold:
             // - this event hasn't been claimed by a track
             // - the track manager has available tracking slots
             // - we're far enough from existing tracks (or there are no tracks yet)
             // - enough unassociated events have accumulated in the waiting room since the last detection attempt
-            if ((!f_event_associated) &
-                (track_manager->hasAvailableSlot()) &
-                (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
-                (detection_event_count > params.SAE_operation_rate))
-            {
+            //if ((!f_event_associated) &
+            //    (track_manager->hasAvailableSlot()) &
+            //    (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+            //    (detection_event_count > params.SAE_operation_rate))
+            //{
                 //debug
-                std::cout << "MAKING SAE DETECTION!\n";
+            //    std::cout << "MAKING SAE DETECTION!\n";
 
-                detection_event_count = 0;
+            //    detection_event_count = 0;
                 // perform the detection
                 //int detector_output = detector->performDetection_dt({(double) c, (double) r, ts, (double) p});
-                int detector_output = detector->performDetection({(double) c, (double) r, ts, (double) p});
+            //    int detector_output = detector->performDetection({(double) c, (double) r, ts, (double) p});
 
-                if (detector_output == 1) // confirmed candidate! Move to start a new track
-                {
+            //    if (detector_output == 1) // confirmed candidate! Move to start a new track
+            //    {
                     //debug
-                    std::cout << "SAE RETURNED 1. CREATING NEW TRACK FOR THIS EVENT!\n";
+            //        std::cout << "SAE RETURNED 1. CREATING NEW TRACK FOR THIS EVENT!\n";
 
-                    track_manager->createNewTrack({(double) c, (double) r, ts});
+            //        track_manager->createNewTrack({(double) c, (double) r, ts});
 
                     //debug
-                    std::cerr << "[track] NEW track at (" << c << "," << r
-                              << ") ts=" << ts
-                              << " active=" << track_manager->activeCount() << std::endl;
-                }
-            }
+            //        std::cerr << "[track] NEW track at (" << c << "," << r
+            //                  << ") ts=" << ts
+            //                  << " active=" << track_manager->activeCount() << std::endl;
+            //    }
+            //}
 
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
