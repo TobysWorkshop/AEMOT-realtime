@@ -598,43 +598,37 @@ namespace processing {
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
             // How we do this (one of three ways) is based on the config and how many events have passed:
-            std::vector<int> deleted_IDs, deleted_IDs_temp;
+            std::vector<int> deleted_IDs;
 
-            // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
             double_track_evaluation_counter++;
             full_evaluation_counter++;
 
-            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager->activeCount() > 1)))
+            // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
+            if ((track_manager->activeCount() > 1) & (params.f_evaluate == 1) & (double_track_evaluation_counter > 100))
             {  
                 //debug
                 std::cout << "[track eval] Checking duplicate tracks...\n";
 
                 double_track_evaluation_counter = 0;
-                deleted_IDs_temp = track_manager->evaluateDoubleTracks();
-                if (deleted_IDs_temp.size() > 0){
-                    deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
-                }
+                auto ids = track_manager->evaluateDoubleTracks();
+                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());
             }
-            // (b) Full evaluation (age/activity/etc.) - runs only every 100 events, if enabled.
-            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 1001)){
+            // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
+            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
                 //debug
                 std::cout << "[track eval] Performing full eval...\n";
 
                 full_evaluation_counter = 0;
-                deleted_IDs_temp = track_manager->evaluateTracks(ts);
-                if (deleted_IDs_temp.size() > 0){
-                    deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
-                }
+                auto ids = track_manager->evaluateTracks(ts);
+                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());  
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
-            else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
+            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
                 //debug
                 std::cout << "[track eval] Checking position (frame edge) only...\n";
 
-                deleted_IDs_temp = track_manager->evaluateTracksPosition();
-                if (deleted_IDs_temp.size() > 0){
-                    deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
-                }
+                auto ids = track_manager->evaluateTracksPosition();
+                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());
             }
 
             // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.

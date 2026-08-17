@@ -164,49 +164,39 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
 
         if(!output_tracks[i]->active) continue; // Skip inactive tracks
 
-        if (ts_now - output_tracks[i]->get_t0() >= evaluate_ts_age){ 
-            Eigen::Vector<double, 10> x_hat_i = output_tracks[i]->state().transpose();
-            Eigen::Vector<double, 10> cov_i = output_tracks[i]->P_x().diagonal();
-                   
-            // Conditions
-            bool out_of_frame = ((x_hat_i(0) < 10) || (x_hat_i(0) > width-11)) || ((x_hat_i(1) < 10) || (x_hat_i(1) > height-11));
-            bool inactive = (abs(ts_now - output_tracks[i]->get_ts_last()) > evaluate_dt_terminate);
-            bool low_activity = ((1/output_tracks[i]->dt_moving_avg)) < evaluate_low_activity_factor * event_rate_threshold;
-            bool invalid_shape = (x_hat_i(4) <= 0 || x_hat_i(5) <= 0);
+        auto* kf = output_tracks[i];
+        Eigen::VectorXd x = kf->state().transpose();
 
-            if(out_of_frame || inactive || low_activity || invalid_shape){
-                if (output_tracks[i]->validated == 1){
-                    std::cout << out_of_frame << "\t" << inactive << "\t" << low_activity << "\t" << invalid_shape << std::endl;
-                    // std::cout << inactive << "\t" << abs(ts_now - output_tracks[i]->get_ts_last()) << "\t" << evaluate_dt_terminate << "\t\t" << ts_now << "\t" << output_tracks[i]->get_ts_last() << "\n\n";
-                }
-                // std::cout << out_of_frame << "\t" << inactive << "\t" << low_activity << "\t" << invalid_shape << std::endl;
+        bool out_of_frame = (x(0) < 10 || x(0) > width-11 || x(1) < 10 || x(1) > height-11);
+        bool inactive     = (ts_now - kf->get_ts_last() > evaluate_dt_terminate);
+        bool low_activity = (1.0 / kf->dt_moving_avg) < evaluate_low_activity_factor * event_rate_threshold;
+        bool bad_shape    = (x(4) <= 0 || x(5) <= 0);
 
-
-                //debug
-                std::cerr << "[del] id=" << i
+        // Always allow deletion for these hard failures
+        if (out_of_frame || inactive || bad_shape || low_activity) {
+            //debug
+            std::cerr << "[del] id=" << i
                             << " age=" << (ts_now - output_tracks[i]->get_t0())
                             << " out=" << out_of_frame
                             << " inact=" << inactive
                             << " low=" << low_activity
-                            << " shape=" << invalid_shape
+                            << " shape=" << bad_shape
                             << " rate=" << (1.0 / output_tracks[i]->dt_moving_avg)
                             << " thr=" << event_rate_threshold
                             << " val=" << output_tracks[i]->validated
-                            << " xy=(" << x_hat_i(0) << "," << x_hat_i(1) << ")"
-                            << " lam=(" << x_hat_i(4) << "," << x_hat_i(5) << ")"
                             << std::endl;
 
-                deleted_IDs.push_back(i);
-                deleteTrack(output_tracks, i);        
-                continue;
-            }
+            deleted_IDs.push_back(i);
+            deleteTrack(output_tracks, i);
+            continue;
+        }
 
-            // std::cout << i << "\t" << output_tracks[i]->dt_moving_avg << "\t\t" << (1/output_tracks[i]->dt_moving_avg) << "\t\t" << event_rate_threshold << std::endl; 
-            bool rate = (1/output_tracks[i]->dt_moving_avg) > event_rate_threshold;
-
-            if(rate & (output_tracks[i]->validated==0)){
-                output_tracks[i]->validated = 1;
-                output_tracks[i]->openOutputFile();
+        // Validation waits for age
+        if (ts_now - kf->get_t0() >= evaluate_ts_age) {
+            bool rate_ok = (1.0 / kf->dt_moving_avg) > event_rate_threshold;
+            if (rate_ok && kf->validated == 0) {
+                kf->validated = 1;
+                kf->openOutputFile();
                 if (f_decode){
                    output_tracks[i]->decoder->open_G_file();
                 }
