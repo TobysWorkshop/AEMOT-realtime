@@ -92,7 +92,7 @@ f_show_candidates             : 1
 SAE_ksize                     : 7
 SAE_alpha                     : 3
 SAE_operation_rate            : 200 # how many events between each operation
-SAE_detection_threshold       : 0.75 # val = cos(theta)
+SAE_detection_threshold       : 0.9 # val = cos(theta)
 SAE_min_active_pixels         : 10
 SAE_min_contributions         : 12
 SAE_min_detections_in_patch   : 40
@@ -104,10 +104,10 @@ detector_dt_threshold         : 0.001 #0500  # maximum dt in sae patch around ne
 
 # Evaluation parameters
 f_evaluate                    : 1
-evaluate_ts_age               : 0.3    # how long to wait before evaluating (let it get some events and initialise)
-evaluate_dt_terminate         : 0.5     # time with no events before deleting 
-evaluate_low_activity_factor  : 0.05     # factor of event rate threshold to delete track
-event_rate_threshold          : 2000   # event rate required for validation
+evaluate_ts_age               : 0.08    # how long to wait before evaluating (let it get some events and initialise)
+evaluate_dt_terminate         : 0.12     # time with no events before deleting 
+evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to delete track
+event_rate_threshold          : 1000   # event rate required for validation
 
 
 pool_size : 10

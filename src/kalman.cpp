@@ -251,8 +251,8 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
   //------------------------------------------------//
   //------------------------------------------------//
-  //double dt_alpha = 0.95 ;
-  //dt_moving_avg = (dt_alpha) *  dt_moving_avg + (1-dt_alpha)*dt;
+  double dt_alpha = 0.95 ;
+  dt_moving_avg = (dt_alpha) *  dt_moving_avg + (1-dt_alpha)*dt;
 
 
   ts_last[id] = e(2);
