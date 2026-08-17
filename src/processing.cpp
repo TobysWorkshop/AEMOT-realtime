@@ -388,7 +388,7 @@ namespace processing {
         total_events += events.size();
         
         // debug (remove later):
-        //std::cout << "received packet of " << events.size() << " events\n";
+        std::cout << "received packet of " << events.size() << " events\n";
         
         // iterate over every event in the packet:
         for (const auto& event : events) {
@@ -448,6 +448,9 @@ namespace processing {
                     dist_min = distance;
                     id = i; // remember the index of the closest track
 
+                    //debug
+                    std::cout << "Found closer track. ID: " << i << ". Distance: " << dist_min << "\n";
+
                 }
             }
 
@@ -456,6 +459,9 @@ namespace processing {
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
             if (dist_min < 50)
             {
+                //debug
+                std::cout << "Distance threshold met! Absorbing into existing track.\n";
+
                 f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
                 track_manager->getTrack(id)->update(e, 0, p);
             }
@@ -509,6 +515,9 @@ namespace processing {
             // And so we must pass it to the SAEdetector to classify it
             if (!f_event_associated) // if the event hasn't been associated yet
             {
+                //debug
+                std::cout << "Event NOT associated to existing track. Adding to detector.\n";
+
                 // we add this event to the detector waiting room, ready for the next detection attempt
                 detector->addEvent({(double) c, (double) r, ts, (double) p});
                 detection_event_count++;
@@ -524,6 +533,9 @@ namespace processing {
                 (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
                 (detection_event_count > params.SAE_operation_rate))
             {
+                //debug
+                std::cout << "MAKING SAE DETECTION!\n";
+
                 detection_event_count = 0;
                 // perform the detection
                 //int detector_output = detector->performDetection_dt({(double) c, (double) r, ts, (double) p});
@@ -531,6 +543,9 @@ namespace processing {
 
                 if (detector_output == 1) // confirmed candidate! Move to start a new track
                 {
+                    //debug
+                    std::cout << "SAE RETURNED 1. CREATING NEW TRACK FOR THIS EVENT!\n";
+
                     track_manager->createNewTrack({(double) c, (double) r, ts});
 
                     //debug
@@ -550,7 +565,10 @@ namespace processing {
             full_evaluation_counter++;
 
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & ((double_track_evaluation_counter > 100) & (track_manager->activeCount() > 1)))
-            {
+            {  
+                //debug
+                std::cout << "[track eval] Checking duplicate tracks...\n";
+
                 double_track_evaluation_counter = 0;
                 deleted_IDs_temp = track_manager->evaluateDoubleTracks();
                 if (deleted_IDs_temp.size() > 0){
@@ -559,6 +577,9 @@ namespace processing {
             }
             // (b) Full evaluation (age/activity/etc.) - runs only every 100 events, if enabled.
             else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 1001)){
+                //debug
+                std::cout << "[track eval] Performing full eval...\n";
+
                 full_evaluation_counter = 0;
                 deleted_IDs_temp = track_manager->evaluateTracks(ts);
                 if (deleted_IDs_temp.size() > 0){
@@ -567,6 +588,9 @@ namespace processing {
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
             else if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
+                //debug
+                std::cout << "[track eval] Checking position (frame edge) only...\n";
+
                 deleted_IDs_temp = track_manager->evaluateTracksPosition();
                 if (deleted_IDs_temp.size() > 0){
                     deleted_IDs.insert(deleted_IDs.end(), deleted_IDs_temp.begin(), deleted_IDs_temp.end());
@@ -582,14 +606,14 @@ namespace processing {
 
             // BOOKEEPING AFTER EVALUATION //
             // Keep the track id valid if a track was deleted this iteration
-            if (track_manager->activeCount() > 0)
-            {
-                if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
-                    if (id >= 0 && id < track_manager->len()) {
-                        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
-                    }
-                }
-            }
+            //if (track_manager->activeCount() > 0)
+            //{
+                //if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
+                //    if (id >= 0 && id < track_manager->len()) {
+                //        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
+                //    }
+                //}
+            //}
 
             ts_kf_last = ts;
             t_last = ts; // advance the previous timestep marker, ready for the next event to come in!
