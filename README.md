@@ -95,9 +95,10 @@ Now everything is ready to use!
 NOTE: the above has now been changed to rely on the includes in the CMakelists.txt, rather than hard-coded #includes in the individual .cpp files.
 
 ## How to use
-This project provides two ways of running the system: realtime streaming from a Gen4 camera, and replaying from a .es file. 
+This project provides two ways of running the system: <ins>realtime streaming from a gen4 camera</ins>, and <ins>replaying from a .es file</ins>.
 
-Once you've built the project, you can run it using the following command (from `aemot_realtime/`):
+### <ins>Streaming from a gen4 camera (`aemot_realtime`)</ins>
+Once you've built the project, you can run the ***aemot_realtime*** executable using the following command (from `aemot_realtime/`):
 ```bash
 cd ~working_directory/aemot_realtime
 ./build/aemot_realtime <config_name>
@@ -107,3 +108,14 @@ For example, if I have a config file `aemot_realtime/configs/bees.yaml`, then I 
 `./build/aemot_realtime bees`
 
 If no `<config_name>` is provided, it should default to the included `default.yaml` file: `aemot_realtime/configs/default.yaml`.
+
+### <ins>Replaying from a .es file (`aemot_replay`)</ins>
+Once you've built the project, you can run the ***aemot_replay*** executable using the following command (from `aemot_realtime/`):
+```bash
+cd ~working_directory/aemot_realtime
+./build/aemot_replay <config_name> <.es_file_location>
+```
+Where `<config_name>` follows the same requirements as above, and `<.es_file_location>` is a path relative to `aemot_realtime/`. There is a `/data` folder included in this repo, which is designed for this very purpose: place your .es files in here and then the command becomes:
+```
+./build/aemot_replay <config_name> ./data/<file_name>.es
+```
