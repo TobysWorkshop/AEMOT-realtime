@@ -88,7 +88,10 @@ int main(int argc, char* argv[]) {
         processing::render_setup();
         frame_job job;
         while (frames.pop(job)) {
-            processing::render_frame(job);
+            if (processing::render_frame(job)) {
+                running.store(false);
+                break;
+            }
         }
         processing::render_teardown();
     });

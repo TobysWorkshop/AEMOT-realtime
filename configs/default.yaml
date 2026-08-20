@@ -17,9 +17,10 @@ n_target: 4 # unused
 data_format: 1 # 0: ts,c,r,p; 1: c,r,p,ts
 ring_buffer_len: 10
 dist_threshold: 10 # radius for region around an object where events that flal inside it are associated to that object
-publish_framerate: 40
-contrast_threshold : 0.1
-alpha: 50
+publish_framerate: 200
+
+contrast_threshold : 0.9 #0.1
+alpha: 5 #50
 m : 2 # Number of measurements
 dt: 0.0001
 n_state: 10 # Number of filter state
@@ -91,7 +92,7 @@ f_show_candidates             : 1
 # Line detector
 SAE_ksize                     : 7
 SAE_alpha                     : 3
-SAE_operation_rate            : 200 # how many events between each operation
+SAE_operation_rate            : 1 # how many events between each operation
 SAE_detection_threshold       : 0.9 # val = cos(theta)
 SAE_min_active_pixels         : 10
 SAE_min_contributions         : 12
@@ -110,4 +111,4 @@ evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to del
 event_rate_threshold          : 1000   # event rate required for validation
 
 
-pool_size : 10
+pool_size : 20

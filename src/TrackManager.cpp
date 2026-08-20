@@ -167,9 +167,17 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
         auto* kf = output_tracks[i];
         Eigen::VectorXd x = kf->state().transpose();
 
+        const double min_area = 50.0; // prevent division by zero for tiny blobs
+        double area = std::max(std::abs(x(4) * x(5)), min_area); // area = width * height
+
+        const double rate_per_area = 1.0; // move this to parameters to be tuned
+
+        double required_rate = rate_per_area * area; // threshold scales with area
+        required_rate = std::max(required_rate, evaluate_low_activity_factor * event_rate_threshold); // ensure it doesn't go below the base threshold so we don't squash small blobs' hopes and dreams
+
         bool out_of_frame = (x(0) < 10 || x(0) > width-11 || x(1) < 10 || x(1) > height-11);
         bool inactive     = (ts_now - kf->get_ts_last() > evaluate_dt_terminate);
-        bool low_activity = (1.0 / kf->dt_moving_avg) < evaluate_low_activity_factor * event_rate_threshold;
+        bool low_activity = (1.0 / kf->dt_moving_avg) < required_rate;
         bool bad_shape    = (x(4) <= 0 || x(5) <= 0);
 
         // Always allow deletion for these hard failures
@@ -182,7 +190,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
                             << " low=" << low_activity
                             << " shape=" << bad_shape
                             << " rate=" << (1.0 / output_tracks[i]->dt_moving_avg)
-                            << " thr=" << event_rate_threshold
+                            << " thr=" << required_rate
                             << " val=" << output_tracks[i]->validated
                             << std::endl;
 
@@ -193,7 +201,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
 
         // Validation waits for age
         if (ts_now - kf->get_t0() >= evaluate_ts_age) {
-            bool rate_ok = (1.0 / kf->dt_moving_avg) > event_rate_threshold;
+            bool rate_ok = (1.0 / kf->dt_moving_avg) > event_rate_threshold; // keep standard event_rate_threshold here for validation, not the area-scaled one
             if (rate_ok && kf->validated == 0) {
                 kf->validated = 1;
                 kf->openOutputFile();

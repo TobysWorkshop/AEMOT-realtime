@@ -153,7 +153,7 @@ namespace processing {
     // image. Draws an ellipse for each snapshotted track. Optionally
     // writes the frame to a video file/png. Never reads shared tracking
     // state - everything it needs is in `job`.
-    void render_frame(const frame_job& job) {
+    bool render_frame(const frame_job& job) {
         cv::Mat image;
         cv::exp(job.log_intensity_snapshot, image); // undo the log: back to linear "intensity"
         double minVal = 1.4;
@@ -230,7 +230,13 @@ namespace processing {
         }
  
         cv::imshow("Video", cimg); // show the reconstructed+annotated frame
-        cv::waitKey(1);
+        int key = cv::waitKey(1);
+
+        // allow close on ESC key
+        if (key == 27) {
+            std::cout << "ESC key pressed. Exiting..." << std::endl;
+            return true; // signal to the caller that we want to exit
+        }
  
         // --- Save outputs ---
         if (params.save_video_flag && writer.isOpened()) {
@@ -241,6 +247,7 @@ namespace processing {
             cv::imwrite(output_image_name, cimg);
         }
         image_count += 1;
+        return false; // signal to the caller that we want to continue
     }
 
 

@@ -34,7 +34,7 @@ namespace processing {
     // process_batch()). Releases the video writer and reports totals.
     void teardown();
 
-    
+
     // ---- Render thread: all OpenCV GUI/video-writer calls live here ----
     //
     // These three must all run on the SAME thread as each other (a
@@ -52,7 +52,7 @@ namespace processing {
  
     // Draws and optionally saves/writes one frame from a self-contained
     // snapshot - never reads shared tracking state directly.
-    void render_frame(const frame_job& job);
+    bool render_frame(const frame_job& job);
  
     // Releases the video writer and destroys the window.
     void render_teardown();

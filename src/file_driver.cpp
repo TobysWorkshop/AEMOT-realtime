@@ -34,6 +34,10 @@ void handle_sigint(int) {
     running.store(false);
 }
 
+struct replay_cancelled : std::exception {
+    const char* what() const noexcept override { return "replay cancelled"; }
+};
+
 int main(int argc, char* argv[]) {
     if (argc < 3) {
         std::cerr << "usage: " << argv[0] << " <config_name> <events.es>\n";
@@ -78,10 +82,15 @@ int main(int argc, char* argv[]) {
         processing::render_setup();
         frame_job job;
         while (frames.pop(job)) {
-            processing::render_frame(job);
+            if (processing::render_frame(job)) { // if the user pressed ESC, signal to stop the main loop and break out of the render loop
+                running.store(false);
+                break;
+            }
         }
         processing::render_teardown();
     });
+
+    std::signal(SIGINT, handle_sigint);
 
     // Accumulates events read from the file into fixed-size batches before
     // handing them to the queue, mirroring how the live camera batches
@@ -102,6 +111,9 @@ int main(int argc, char* argv[]) {
     // queue is full, this call - and therefore the whole read thread -
     // simply waits, pausing file reading until processing catches up.
     auto handle_event = [&](sepia::dvs_event event) {
+        if (!running.load()) {
+            throw replay_cancelled{};
+        }
         current_batch.push_back(event);
         if (current_batch.size() >= batch_size) {
             queue.push_blocking(std::move(current_batch));
@@ -117,6 +129,8 @@ int main(int argc, char* argv[]) {
             std::rethrow_exception(exception);
         } catch (const sepia::end_of_file&) {
             // normal end of the recording
+        } catch (const replay_cancelled&) {
+            // user hit Ctrl+C - not an error, just stop reading
         } catch (const std::exception& error) {
             std::cerr << "replay error: " << error.what() << "\n";
         }
@@ -157,7 +171,9 @@ int main(int argc, char* argv[]) {
     // Wait for the file to finish (or Ctrl+C).
     {
         std::unique_lock<std::mutex> lock(done_mutex);
-        done_cv.wait(lock, [&] { return reading_done || !running.load(); });
+        while (!reading_done && running.load()) {
+            done_cv.wait_for(lock, std::chrono::milliseconds(100), [&] { return reading_done; });
+        }
     }
     observable.reset(); // stops and joins the observable's own read thread
 
