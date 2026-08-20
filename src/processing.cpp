@@ -398,7 +398,7 @@ namespace processing {
         total_events += events.size();
         
         // debug (remove later):
-        std::cout << "received packet of " << events.size() << " events\n";
+        //std::cout << "received packet of " << events.size() << " events\n";
         
         // iterate over every event in the packet:
         for (const auto& event : events) {
@@ -408,7 +408,7 @@ namespace processing {
             // event.on -> true = ON, false = OFF
 
             //debug
-            std::cout << "------------------------------------------\n";
+            //std::cout << "------------------------------------------\n";
 
             if (!have_first_ts) // assign t1 on first event
             {
@@ -432,14 +432,6 @@ namespace processing {
             // update the reconstructed-image pixel this event touched
             high_pass(ts, c, r, p, params.alpha);
 
-            // Whenever the timestamp advances, decide whether the
-            // previous time-slot should be marked as "had an associated event" for logging purposes
-            //if (ts - t_last > 0)
-            //{
-            //    f_write_position = f_associated_this_ts;
-            //    f_associated_this_ts = false;
-            //}
-
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
@@ -462,15 +454,15 @@ namespace processing {
                     id = i; // remember the index of the closest track
 
                     //debug
-                    std::cout << "Found closer track. ID: " << i << ". Distance: " << dist_min << "\n";
+                    //std::cout << "Found closer track. ID: " << i << ". Distance: " << dist_min << "\n";
 
                 }
             }
 
-            // This is a simpler replacement to the commented out block below
+            // This is a simpler replacement to the original variable gating logic - should be faster.
             // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min < 50)
+            if (dist_min < params.dist_threshold)
             {
                 //debug
                 std::cout << "Distance threshold met! Absorbing into existing track.\n";
@@ -479,60 +471,13 @@ namespace processing {
                 track_manager->getTrack(id)->update(e, 0, p);
             }
             
-            // REMOVE THIS:
-            //if (any_active) /// NOTE: change this to check box rather than circle (simplify it)
-            //{
-            //    // Pull out the closest track's full state/covarience to check if its feasible to now associate it
-            //    x_hat_track = track_manager->getTrack(id)->state();
-            //    P_track = track_manager->getTrack(id)->P_x();
-            //    double ts_last_for_gamma = track_manager->getTrack(id)->get_ts_last_for_gamma();
-            //    double dist_threshold_track = track_manager->getTrack(id)->get_dist_threshold();
 
-            //    distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
-
-                // Check the feasibility by computing an adaptive association-distance threshold
-                // We'll only recompute the threshold if the track's position is confident (has low covariance)
-                // The threshold size adapts towards 2.5x the target's estimated width/height (whichever is bigger)
-                // This is blended smoothly over timeusing exponential decay factor gamma for how long it's been since the last track update
-            //    if ((P_track(0, 0) < 3) && (P_track(1, 1) < 3))
-            //    {
-            //        double gamma = std::exp(-alpha_dist * (ts - ts_last_for_gamma));
-
-            //        if (x_hat_track(4) > x_hat_track(5)) {
-            //            dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(4);
-            //        } else {
-            //            dist_threshold_track = gamma * dist_threshold_track + (1 - gamma) * 2.5 * x_hat_track(5);
-            //        }
-
-                    // Never let the gate shrink below the configured minimum.
-            //        if (dist_threshold_track < params.dist_threshold) {
-            //            dist_threshold_track = params.dist_threshold;
-            //        }
-
-            //        track_manager->getTrack(id)->update_distance_threshold(dist_threshold_track);
-            //    }
-
-                // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            //    if (distance < dist_threshold_track)
-            //    {
-            //        f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
-            //        track_manager->getTrack(id)->update(e, 0, p);
-            //    }
-            //}
-            // end nearest-neighbour data association step
-
-            //f_associated_this_ts = (f_associated_this_ts | f_event_associated);
-
-            // AUTO_DETECTION OF NEW TARGETS //
-            // If the event did NOT get associated to an existing track, then we treat it as either a noise or object-candidate event.
-            // And so we must pass it to the SAEdetector to classify it
-            
             int detector_output = -1;
             
             if (!f_event_associated) // if the event hasn't been associated yet
             {
                 //debug
-                std::cout << "Event NOT associated to existing track. Adding to detector.\n";
+                //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
 
                 // perform the SAE detection on this event
                 detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
@@ -543,9 +488,6 @@ namespace processing {
                     (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
                     (detection_event_count > params.SAE_operation_rate)) 
                 {
-                    
-                    //debug
-                    std::cout << "MAKING SAE DETECTION!\n";
                     
                     detection_event_count = 0;
     
@@ -562,39 +504,6 @@ namespace processing {
 
             }
 
-
-            // Only initiate a detection attempt when ALL of the following hold:
-            // - this event hasn't been claimed by a track
-            // - the track manager has available tracking slots
-            // - we're far enough from existing tracks (or there are no tracks yet)
-            // - enough unassociated events have accumulated in the waiting room since the last detection attempt
-            //if ((!f_event_associated) &
-            //    (track_manager->hasAvailableSlot()) &
-            //    (distance > params.detector_dist_threshold || track_manager->activeCount() == 0) &
-            //    (detection_event_count > params.SAE_operation_rate))
-            //{
-                //debug
-            //    std::cout << "MAKING SAE DETECTION!\n";
-
-            //    detection_event_count = 0;
-                // perform the detection
-                //int detector_output = detector->performDetection_dt({(double) c, (double) r, ts, (double) p});
-            //    int detector_output = detector->performDetection({(double) c, (double) r, ts, (double) p});
-
-            //    if (detector_output == 1) // confirmed candidate! Move to start a new track
-            //    {
-                    //debug
-            //        std::cout << "SAE RETURNED 1. CREATING NEW TRACK FOR THIS EVENT!\n";
-
-            //        track_manager->createNewTrack({(double) c, (double) r, ts});
-
-                    //debug
-            //        std::cerr << "[track] NEW track at (" << c << "," << r
-            //                  << ") ts=" << ts
-            //                  << " active=" << track_manager->activeCount() << std::endl;
-            //    }
-            //}
-
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
             // How we do this (one of three ways) is based on the config and how many events have passed:
@@ -607,7 +516,7 @@ namespace processing {
             if ((track_manager->activeCount() > 1) & (params.f_evaluate == 1) & (double_track_evaluation_counter > 100))
             {  
                 //debug
-                std::cout << "[track eval] Checking duplicate tracks...\n";
+                //std::cout << "[track eval] Checking duplicate tracks...\n";
 
                 double_track_evaluation_counter = 0;
                 auto ids = track_manager->evaluateDoubleTracks();
@@ -616,7 +525,7 @@ namespace processing {
             // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
                 //debug
-                std::cout << "[track eval] Performing full eval...\n";
+                //std::cout << "[track eval] Performing full eval...\n";
 
                 full_evaluation_counter = 0;
                 auto ids = track_manager->evaluateTracks(ts);
@@ -625,7 +534,7 @@ namespace processing {
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
                 //debug
-                std::cout << "[track eval] Checking position (frame edge) only...\n";
+                //std::cout << "[track eval] Checking position (frame edge) only...\n";
 
                 auto ids = track_manager->evaluateTracksPosition();
                 deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());

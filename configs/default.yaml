@@ -13,10 +13,10 @@ height: 721
 # width: 321
 # height: 321
 
-n_target: 4 # Default number of tracking target
+n_target: 4 # unused
 data_format: 1 # 0: ts,c,r,p; 1: c,r,p,ts
 ring_buffer_len: 10
-dist_threshold: 10
+dist_threshold: 10 # radius for region around an object where events that flal inside it are associated to that object
 publish_framerate: 40
 contrast_threshold : 0.1
 alpha: 50
@@ -96,7 +96,7 @@ SAE_detection_threshold       : 0.9 # val = cos(theta)
 SAE_min_active_pixels         : 10
 SAE_min_contributions         : 12
 SAE_min_detections_in_patch   : 40
-MAX_NUMBER_OF_TRACKS          : 100
+MAX_NUMBER_OF_TRACKS          : 100 #unused
 
 # Dt detection
 detector_dist_threshold       : 50        # distance from existing track to allow detection
