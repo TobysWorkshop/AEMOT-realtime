@@ -163,7 +163,7 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
 
     int num_init_points = init_events_patch.sum() - 1;
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_init_points, 2);
-    Eigen::MatrixXd W_inv = Eigen::MatrixXd::Zero(num_init_points, num_init_points);
+    Eigen::VectorXd W_diag = Eigen::VectorXd::Zero(num_init_points);
 
     int idx = 0;
     for (int i = 0; i < patch_points.size(); i++){   
@@ -182,12 +182,12 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
 
         // Compute dt term
         double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_inv(idx, idx) = 1/exp_term;
+        W_diag(idx, idx) = 1.0 /exp_term;
 
         idx++;
     }
 
-    Eigen::Matrix2d res = A.transpose() * W_inv * A;
+    Eigen::Matrix2d res = A.transpose() * W_diag.asDiagonal() * A;
 
     // Compute eigenvector of smallest eigenvalue for l_perp, rotate 90deg 
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigen_solver(res); 
@@ -219,7 +219,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
     
     int num_init_points = init_directions_patch.sum() - 1;
     Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_init_points, 2);
-    Eigen::MatrixXd W_inv = Eigen::MatrixXd::Zero(num_init_points, num_init_points);
+    Eigen::VectorXd W_diag = Eigen::VectorXd::Zero(num_init_points);
 
     int idx = 0;
     for (int i = 0; i < patch_points.size(); i++){   
@@ -243,7 +243,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
         idx++;
     }
 
-    Eigen::Matrix2d res = A.transpose() * W_inv * A;
+    Eigen::Matrix2d res = A.transpose() * W_diag.asDiagonal() * A;
 
     // Compute eigenvector of smallest eigenvalue for l_perp, rotate 90deg 
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigen_solver(res); 
@@ -256,8 +256,6 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
 
         // Check if the magnitude of the difference is below our threshold
     if (l_inner >= m_detection_threshold){
-        Eigen::Vector<double, 3> detection;
-        detection << e(0), e(1), e(2);
         return 1;
     } 
     else {

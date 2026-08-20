@@ -119,6 +119,10 @@ public:
   bool active = false;
   double dt_moving_avg = 1;
 
+  // for fast processing.cpp lookup:
+  inline double pos_x() const { return x_hat(0, 0); }
+  inline double pos_y() const { return x_hat(0, 1); }
+
   //destructor
   ~KalmanFilter();
 
@@ -176,7 +180,7 @@ private:
   typedef boost::circular_buffer<Eigen::MatrixXd> CircularBuffer;
   std::vector<boost::circular_buffer<std::tuple<double, double, double, double>>> ring_buffer_e;
   std::vector<boost::circular_buffer<std::pair<double, double>>> ring_buffer_x;
-  std::vector<boost::circular_buffer<double>> ring_buffer_theta;
+  std::vector<boost::circular_buffer<Eigen::Matrix2d>> ring_buffer_rot;
   std::vector<boost::circular_buffer<std::pair<double, double>>> ring_buffer_delta;
 
 

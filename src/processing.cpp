@@ -29,6 +29,19 @@
 #include <stdexcept>
 #include <unistd.h>
 
+// for debug terminal logging - needs to be set when building
+#ifndef AEMOT_VERBOSE_LOGGING
+#define AEMOT_VERBOSE_LOGGING 0
+#endif
+
+#if AEMOT_VERBOSE_LOGGING
+#define AEMOT_LOG_INFO(x) do { std::cout << x; } while (0)
+#define AEMOT_LOG_ERR(x)  do { std::cerr << x; } while (0)
+#else
+#define AEMOT_LOG_INFO(x) do {} while (0)
+#define AEMOT_LOG_ERR(x)  do {} while (0)
+#endif
+
 namespace processing {
 
     namespace { // global variables for this namespace
@@ -42,7 +55,6 @@ namespace processing {
         frame_queue* frame_output = nullptr;
 
         // ---- display / video output ----
-        std::vector<double> image_ref_ts;
         cv::VideoWriter writer_ref, writer;
         std::string output_image_path;
         int image_count = 0;
@@ -52,8 +64,6 @@ namespace processing {
         cv::Mat log_intensity_state, ts_array;
         double contrast_threshold = 0.0;
         bool use_gyro_flag = false;
-        // Decay rate used to smooth/update the per-track association distance threshold.
-        double alpha_dist = 1.4;
         // Buffer of events sharing a timestamp (cleared on track deletion).
         std::queue<std::pair<int, std::pair<int, int>>> same_ts_e_buffer;
 
@@ -72,6 +82,12 @@ namespace processing {
         bool f_write_position = false;
         Eigen::Vector3d e;              // event measurement, packed as (x, y, ts) each iteration
         Eigen::MatrixXd x_hat_track, P_track;
+
+        std::vector<int> deleted_IDs_scratch;
+
+        // distance thresholds cached in squared form once per batch-run so the per-event search never needs sqrt()/pow()
+        double dist_threshold_sq = 0.0;
+        double detector_dist_threshold_sq = 0.0;
 
         // ---- Kalman filter matrix templates ----
         // built once in setup() then handed to TrackManager (which makes its own per-track copies)
@@ -109,13 +125,16 @@ namespace processing {
 
     // ---- HIGH PASS FILTERS ---- //
     // (per-pixel updates) A classic Surface of Active Events (SAE) visual reconstruction.
-    void high_pass(double ts, int x, int y, int p, int &alpha)
+    void high_pass(double ts, int x, int y, int p, int alpha)
     {
-        log_intensity_state.at<double>(y, x) = exp(-alpha * (ts - ts_array.at<double>(y, x))) * log_intensity_state.at<double>(y, x);
-            
-        log_intensity_state.at<double>(y, x) += (p > 0) ? -contrast_threshold : contrast_threshold;
-        ts_array.at<double>(y, x) = ts; // remember when this pixel was last activated
-    };
+        double* li_row = log_intensity_state.ptr<double>(y);
+        double* ts_row = ts_array.ptr<double>(y);
+
+        const double decay = std::exp(-alpha * (ts - ts_row[x]));
+        li_row[x] = li_row[x] * decay + (p > 0 ? -contrast_threshold : contrast_threshold);
+        ts_row[x] = ts; // remember when this pixel was last activated
+    }
+
     // (whole-image updates) Applies an update to the entire SAE at once.
     void high_pass_global(double ts, int &alpha)
     {
@@ -123,7 +142,7 @@ namespace processing {
         cv::exp(-alpha * (ts - ts_array), beta); // decay factor per-pixel
         log_intensity_state = log_intensity_state.mul(beta);
         ts_array.setTo(ts); // mark every pixel as up to date as of ts
-    };
+    }
 
     // ---- FRAME PUBLISHING ---- //
     // Builds a self-contained snapshot of the current visual state and
@@ -285,6 +304,12 @@ namespace processing {
 
         //assign the detector type to use
         use_dt_detector = static_cast<bool>(params.use_dt_detector);
+
+        // cache these once to avoid sqrt and power functions later - just compare to these squared values
+        dist_threshold_sq = params.dist_threshold * params.dist_threshold;
+        detector_dist_threshold_sq = params.detector_dist_threshold * params.detector_dist_threshold;
+
+        deleted_IDs_scratch.reserve(8);
 
         // NOTE: display window / video writer / output-image-folder setup
         // used to happen right here. It's now in render_setup(), which
@@ -450,21 +475,22 @@ namespace processing {
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
             //Find which existing track's predicted position is closest to this event's location
-            bool any_active = false;
-            double dist_min = 1e6; // a very large starting distance
+            double dist_min_sq = 1e18; // a very large starting squared distance (distance = 1e6)
+            const int n_tracks = track_manager->len();
 
             // itterate through the track manager's current tracks to find the closest
-            for (int i = 0; i < track_manager->len(); i++)
+            for (int i = 0; i < n_tracks; i++)
             {
                 // if the track isn't active (just a waiting container), skip it
                 if (!track_manager->getTrack(i)->active) continue;
-                any_active = true;
-                x_hat_track = track_manager->getTrack(i)->state();
-                distance = sqrt(pow((c - x_hat_track(0)), 2) + pow((r - x_hat_track(1)), 2));
-
-                if (distance < dist_min)
+                auto* trk = track_manager->getTrack(i);
+                const double dx = static_cast<double>(c) - trk->pos_x();
+                const double dy = static_cast<double>(r) - trk->pos_y();
+                const double d_sq = dx * dx + dy * dy;
+                
+                if (d_sq < dist_min_sq)
                 {
-                    dist_min = distance;
+                    dist_min_sq = d_sq;
                     id = i; // remember the index of the closest track
 
                     //debug
@@ -476,10 +502,10 @@ namespace processing {
             // This is a simpler replacement to the original variable gating logic - should be faster.
             // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min < params.dist_threshold)
+            if (dist_min_sq < params.dist_threshold_sq)
             {
                 //debug
-                std::cout << "Distance threshold met! Absorbing into existing track.\n";
+                AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
 
                 f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
                 track_manager->getTrack(id)->update(e, 0, p);
@@ -498,7 +524,7 @@ namespace processing {
                     detection_event_count++;
 
                     if ((track_manager->hasAvailableSlot()) &
-                        (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                        (dist_min_sq > detector_dist_threshold_sq || track_manager->activeCount() == 0) &
                         (detection_event_count > params.SAE_operation_rate)) 
                     {
                         detection_event_count = 0;
@@ -521,20 +547,23 @@ namespace processing {
 
                     // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
                     if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
-                        (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                        (dist_min_sq > detector_dist_threshold_sq || track_manager->activeCount() == 0) &
                         (detection_event_count > params.SAE_operation_rate)) 
                     {
                         
                         detection_event_count = 0;
         
                         track_manager->createNewTrack({(double)c, (double)r, ts});
-                        std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
-                                << " active=" << track_manager->activeCount() << std::endl;
+                        AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                                << " active=" << track_manager->activeCount() << "\n");
                     } else {
                         if (detector_output == 1) {
-                            std::cerr << "[SAE] SAE returned 1, but conditions for new track not met." << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
+                            AEMOT_LOG_INFO("[SAE] SAE returned 1, but conditions for new track not met."
+                                << " available slots = " << track_manager->hasAvailableSlot()
+                                << ". far enough from existing tracks = " << (dist_min_sq > detector_dist_threshold_sq)
+                                << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n");
                         } else {
-                            std::cerr << "[SAE] SAE returned " << detector_output << ", not creating new track.\n";
+                            AEMOT_LOG_INFO("[SAE] SAE returned " << detector_output << ", not creating new track.\n");
                         }
                     }
                 }
@@ -544,7 +573,7 @@ namespace processing {
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
             // How we do this (one of three ways) is based on the config and how many events have passed:
-            std::vector<int> deleted_IDs;
+            deleted_IDs_scratch.clear();
 
             double_track_evaluation_counter++;
             full_evaluation_counter++;
@@ -557,7 +586,7 @@ namespace processing {
 
                 double_track_evaluation_counter = 0;
                 auto ids = track_manager->evaluateDoubleTracks();
-                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());
+                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());
             }
             // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
@@ -566,7 +595,7 @@ namespace processing {
 
                 full_evaluation_counter = 0;
                 auto ids = track_manager->evaluateTracks(ts);
-                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());  
+                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());  
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
@@ -574,7 +603,7 @@ namespace processing {
                 //std::cout << "[track eval] Checking position (frame edge) only...\n";
 
                 auto ids = track_manager->evaluateTracksPosition();
-                deleted_IDs.insert(deleted_IDs.end(), ids.begin(), ids.end());
+                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());
             }
 
             // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.
@@ -583,17 +612,6 @@ namespace processing {
                     same_ts_e_buffer.pop();
                 }
             }
-
-            // BOOKEEPING AFTER EVALUATION //
-            // Keep the track id valid if a track was deleted this iteration
-            //if (track_manager->activeCount() > 0)
-            //{
-                //if (std::find(deleted_IDs.begin(), deleted_IDs.end(), id) == deleted_IDs.end()){
-                //    if (id >= 0 && id < track_manager->len()) {
-                //        track_manager->getTrack(id)->update_ts_last_for_gamma(ts); // record last-update time for the gate-smoothing logic above
-                //    }
-                //}
-            //}
 
             ts_kf_last = ts;
             t_last = ts; // advance the previous timestep marker, ready for the next event to come in!

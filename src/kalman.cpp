@@ -30,14 +30,14 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
   ts_last.clear();
   ring_buffer_e.clear();
   ring_buffer_x.clear();
-  ring_buffer_theta.clear();
+  ring_buffer_rot.clear();
   ring_buffer_delta.clear();
 
   for (int i = 0; i < n_target; ++i)
   {
     ring_buffer_e.emplace_back(ring_buffer_len);
     ring_buffer_x.emplace_back(ring_buffer_len);
-    ring_buffer_theta.emplace_back(ring_buffer_len);
+    ring_buffer_rot.emplace_back(ring_buffer_len);
     ring_buffer_delta.emplace_back(ring_buffer_len);
   }
 
@@ -62,17 +62,16 @@ void KalmanFilter::init(double t0, std::string input_folder_name)
   ts_last.clear();
   ring_buffer_e.clear();
   ring_buffer_x.clear();
-  ring_buffer_theta.clear();
+  ring_buffer_rot.clear();
   ring_buffer_delta.clear();
   for (int i = 0; i < n_target; i++)
   {
     ts_last.push_back(t0);
     ring_buffer_e.emplace_back(ring_buffer_len);
     ring_buffer_x.emplace_back(ring_buffer_len);
-    ring_buffer_theta.emplace_back(ring_buffer_len);
+    ring_buffer_rot.emplace_back(ring_buffer_len);
     ring_buffer_delta.emplace_back(ring_buffer_len);
   }
-  // std::cout << "kf init x_hat: " << x_hat << std::endl;
 }
 
 void KalmanFilter::init()
@@ -123,14 +122,14 @@ void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
   ts_last.clear();
   ring_buffer_e.clear();
   ring_buffer_x.clear();
-  ring_buffer_theta.clear();
+  ring_buffer_rot.clear();
   ring_buffer_delta.clear();
   for (int i = 0; i < n_target; i++)
   {
     ts_last.push_back(ts);
     ring_buffer_e.emplace_back(ring_buffer_len);
     ring_buffer_x.emplace_back(ring_buffer_len);
-    ring_buffer_theta.emplace_back(ring_buffer_len);
+    ring_buffer_rot.emplace_back(ring_buffer_len);
     ring_buffer_delta.emplace_back(ring_buffer_len);
   }
 }
@@ -172,88 +171,8 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
   //------------------------------------------------//
   //------------------------------------------------//
-
-  // // Write state when we reach a new timestamp
-  //if (dt > 0){
-    // std::cout << std::fixed <<  dt << std::endl;
-    // // TEMP - write position of associated track
-    //states_txt_ << std::fixed << std::setprecision(7);
-    //states_txt_ << track_id << "," << ts_last[id];
-    // std::cout << track_id << "," << ts_last[id] << std::endl;
-    //states_txt_ << std::fixed << std::setprecision(3);
-    //for (int i = 0; i < 2; ++i){
-    //  states_txt_ << "," << x_hat(0, i);
-    //}
-    // for (int i = 0; i < 10; ++i){
-    //   states_txt_ << "," << x_hat(0, i);
-    // }
-
-    // states_txt_ << ",";
-    // for (int i = 0; i < 4; ++i) {
-    //   for (int j = 0; j < 4; ++j) {
-    //       states_txt_ << P(i, j);
-    //       if (!(i == 3 && j == 3)) states_txt_ << ','; // space separator, no trailing space at end
-    //   }
-    // }
-    //states_txt_ << std::endl;
-  //}
-
-
-  // If dt > 0, check if we have reached the downsample count and process if necessary.
-  //if (dt > 0){
-    // If greater than step, write predicted and updated value finishing at the previous timestep.
-    //if (equiv_measurement_count >= equiv_measurement_step){
-      //------------------------------------------------//
-      // Write predicted state
-      //blob_measurements_txt_ << std::fixed << std::setprecision(12);
-      //blob_measurements_txt_ << track_id << "," << ts_last[id];
-      //for (int i = 0; i < 4; ++i){
-      //  blob_measurements_txt_ << "," << x_hat_pred(0, i);
-      //}
-      //blob_measurements_txt_ << ",";
-      //for (int i = 0; i < 4; ++i) {
-      //    for (int j = 0; j < 4; ++j) {
-      //        blob_measurements_txt_ << P_pred(i,j);
-      //        if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
-      //    }
-      //}
-      //for (int i = 0; i < 4; ++i){
-      //  blob_measurements_txt_ << "," << x_hat(0, i);
-      //}
-      //blob_measurements_txt_ << ",";
-      // Write updated covariance
-      //for (int i = 0; i < 4; ++i) {
-      //    for (int j = 0; j < 4; ++j) {
-      //        blob_measurements_txt_ << P(i,j);
-      //        if (!(i == 3 && j == 3)) blob_measurements_txt_ << ',';
-      //    }
-      //}
-      //blob_measurements_txt_ << std::endl;
-      //blob_measurements_txt_.flush();
-
-      //------------------------------------------------//
-      // Reset counter
-      //equiv_measurement_count = 0;
-     
-      // Reset predicted state to the current estimate to start next iteration
-    //  x_hat_pred = x_hat;
-    //  P_pred = P;
-    //}
-
-    // Otherwise increment the counter (processing a new event timestamp)
-    //else {
-      //equiv_measurement_count ++; 
-    //}
-
-  //}
-
-
-  //------------------------------------------------//
-  //------------------------------------------------//
-  //------------------------------------------------//
-  double dt_alpha = 0.95 ;
-  dt_moving_avg = (dt_alpha) *  dt_moving_avg + (1-dt_alpha)*dt;
-
+  double dt_alpha = 0.95;
+  dt_moving_avg = (dt_alpha) * dt_moving_avg + (1-dt_alpha) * dt;
 
   ts_last[id] = e(2);
 
@@ -268,7 +187,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   // NOTE: CHANGE THESE TO FIXED SIZE ARRAYS!
 
   // Propagate updated state (predict and update)
-  x_hat.block(id, 0, 1, n_state) =
+  x_hat.block(id, 0, 1, n_state).noalias() =
       (F.block(id * n_state, 0, n_state, n_state) * x_hat.block(id, 0, 1, n_state).transpose())
           .transpose();
 
@@ -278,7 +197,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       Q * dt;
   
   // Propagate the predict only state
-  x_hat_pred.block(id, 0, 1, n_state) =
+  x_hat_pred.block(id, 0, 1, n_state).noalias() =
       (F.block(id * n_state, 0, n_state, n_state) * x_hat_pred.block(id, 0, 1, n_state).transpose())
           .transpose();
 
@@ -288,29 +207,6 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       Q * dt;
   
 
-
-  // //************************************************************************************//
-  // // std::cout << x_hat.block(id, 0, 1, 4) << std::endl;
-  // blob_measurements_txt_ << std::fixed << std::setprecision(12);
-  // blob_measurements_txt_ << track_id << "," << e(2);
-
-  // // Write predicted state
-  // for (int i = 0; i < 4; ++i){
-  //   blob_measurements_txt_ << "," << x_hat(0, i);
-  // }
-  // blob_measurements_txt_ << ",";
-  // // Write predicted covariance
-  //     for (int i = 0; i < 4; ++i) {
-  //         for (int j = 0; j < 4; ++j) {
-  //             blob_measurements_txt_ << P(i,j);
-  //             if (!(i == 3 && j == 3)) blob_measurements_txt_ << ','; // space separator, no trailing space at end
-  //         }
-  //     }
-
-  // //************************************************************************************//
-
-  
-  
   rotation_m << cos(x_hat(id, 6)), -sin(x_hat(id, 6)), sin(x_hat(id, 6)), cos(x_hat(id, 6));
 
   // A is 1 on lambda
@@ -351,7 +247,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   C.block(2, 0, 1, n_state) << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   ring_buffer_e[id].push_back({e(0), e(1), e(2), p});
   ring_buffer_x[id].push_back({x_hat(id, 0), x_hat(id, 1)});
-  ring_buffer_theta[id].push_back(x_hat(id, 6));
+  ring_buffer_rot[id].push_back(rotation_m);
 
   // if (ring_buffer_e[id].size() >= 2)
   if (ring_buffer_e[id].size() >= ring_buffer_len)
@@ -366,8 +262,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       e_tilda_buffer << std::get<0>(ring_buffer_e[id][i]) + ring_buffer_delta[id][i].first - ring_buffer_x[id][i].first,
           std::get<1>(ring_buffer_e[id][i]) + ring_buffer_delta[id][i].second - ring_buffer_x[id][i].second;
 
-      theta_buf = ring_buffer_theta[id][i];
-      rotation_m_buf << cos(theta_buf), -sin(theta_buf), sin(theta_buf), cos(theta_buf);
+      rotation_m_buf = ring_buffer_rot[id][i];
       y_hat_buffer = rotation_m_buf * A * rotation_m_buf.transpose() * e_tilda_buffer;
       y_hat_sum += y_hat_buffer;
       y_square_sum += pow(y_hat_buffer(0), 2) + pow(y_hat_buffer(1), 2);
@@ -390,24 +285,5 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   x_hat.block(id, 0, 1, n_state) += (K * (y_true - y_hat_fuse)).transpose(); // y = {0, 0}
   P.block(id * n_state, 0, n_state, n_state) =
       (I - K * C) * P.block(id * n_state, 0, n_state, n_state);
-
-
-
-  // //************************************************************************************//
-  // // std::cout << x_hat.block(id, 0, 1, 4) << std::endl;
-  // // Write updated state
-  // for (int i = 0; i < 4; ++i){
-  //   blob_measurements_txt_ << "," << x_hat(0, i);
-  // }
-  // blob_measurements_txt_ << ",";
-  // // Write updated covariance
-  //     for (int i = 0; i < 4; ++i) {
-  //         for (int j = 0; j < 4; ++j) {
-  //             blob_measurements_txt_ << P(i,j);
-  //             if (!(i == 3 && j == 3)) blob_measurements_txt_ << ','; // space separator, no trailing space at end
-  //         }
-  //     }
-  // blob_measurements_txt_ << std::endl;
-  // //************************************************************************************//
-
+      
 }
