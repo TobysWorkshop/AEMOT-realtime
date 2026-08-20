@@ -74,7 +74,10 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.evaluate_dt_terminate = config["evaluate_dt_terminate"].as<double>();
     params.evaluate_low_activity_factor = config["evaluate_low_activity_factor"].as<double>();
 
+    //new
     params.pool_size = config["pool_size"] ? config["pool_size"].as<int>() : 10;
+    params.use_dt_detector = config["use_dt_detector"] ? config["use_dt_detector"].as<int>() : 0;
+    params.rate_per_area = config["rate_per_area"] ? config["rate_per_area"].as<double>() : 1.0;
 
     return params;
 }

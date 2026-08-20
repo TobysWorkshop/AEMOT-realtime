@@ -48,6 +48,7 @@ public:
     void update_default_dist_threshold(double dist_threshold);
     void update_frame_dimensions(int height, int width);
     void update_event_rate_threshold(double threshold);
+    void update_rate_per_area(double rate_per_area);
 
     void store_parameters(double ts_age, double dt_terminate, double low_activity_factor);
 
@@ -94,7 +95,8 @@ private:
     double evaluate_ts_age;
     double evaluate_dt_terminate;
     double evaluate_low_activity_factor;
-  
+
+    double rate_per_area = 1.0;
 
     // params.dt, F, C, Q, R, P, A, x0, n_state, params.ring_buffer_len
 };

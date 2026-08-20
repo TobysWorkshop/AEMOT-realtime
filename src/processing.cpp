@@ -79,6 +79,9 @@ namespace processing {
 
         std::string input_event_path;
 
+        //detector type to use
+        bool use_dt_detector = false;
+
     } // end namespace for global variables
 
     namespace {
@@ -280,6 +283,9 @@ namespace processing {
         int n_state = params.n_state;
         input_event_path = params.input_folder_path + params.input_data_name; // base path (no extension) for this dataset
 
+        //assign the detector type to use
+        use_dt_detector = static_cast<bool>(params.use_dt_detector);
+
         // NOTE: display window / video writer / output-image-folder setup
         // used to happen right here. It's now in render_setup(), which
         // runs on the dedicated render thread instead - see processing.hpp
@@ -343,6 +349,7 @@ namespace processing {
         track_manager->update_default_dist_threshold(params.dist_threshold);
         track_manager->update_frame_dimensions(params.height, params.width);
         track_manager->update_event_rate_threshold(params.event_rate_threshold);
+        track_manager->update_rate_per_area(params.rate_per_area);
         track_manager->store_parameters(
             params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
         );
@@ -480,32 +487,55 @@ namespace processing {
             
 
             int detector_output = -1;
+            int detector_output_dt = -1;
             
             if (!f_event_associated) // if the event hasn't been associated yet
-            {
-                //debug
-                //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
+            {   
+                if (use_dt_detector) { // dt_detector route
 
-                // perform the SAE detection on this event
-                detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
-                detection_event_count++;
+                    // add event to detector's stash
+                    detector->addEvent({(double)c, (double)r, ts, (double)p});
+                    detection_event_count++;
 
-                // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
-                if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
-                    (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
-                    (detection_event_count > params.SAE_operation_rate)) 
-                {
-                    
-                    detection_event_count = 0;
-    
-                    track_manager->createNewTrack({(double)c, (double)r, ts});
-                    std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
-                            << " active=" << track_manager->activeCount() << std::endl;
-                } else {
-                    if (detector_output == 1) {
-                        std::cerr << "[SAE] SAE returned 1, but conditions for new track not met." << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
+                    if ((track_manager->hasAvailableSlot()) &
+                        (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                        (detection_event_count > params.SAE_operation_rate)) 
+                    {
+                        detection_event_count = 0;
+                        // perform the dt detection on this event
+                        detector_output_dt = detector->performDetection_dt({(double)c, (double)r, ts, (double)p});
+                    }
+
+                    if (detector_output_dt == 1) {
+                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                    }
+
+                } else { // standard detector route
+
+                    //debug
+                    //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
+
+                    // perform the SAE detection on this event
+                    detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
+                    detection_event_count++;
+
+                    // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
+                    if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
+                        (dist_min > params.detector_dist_threshold || track_manager->activeCount() == 0) &
+                        (detection_event_count > params.SAE_operation_rate)) 
+                    {
+                        
+                        detection_event_count = 0;
+        
+                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                        std::cerr << "[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                                << " active=" << track_manager->activeCount() << std::endl;
                     } else {
-                        std::cerr << "[SAE] SAE returned " << detector_output << ", not creating new track.\n";
+                        if (detector_output == 1) {
+                            std::cerr << "[SAE] SAE returned 1, but conditions for new track not met." << "detector_output = " << detector_output << ". available slots = " << track_manager->hasAvailableSlot() << ". far enough from existing tracks = " << (distance > params.detector_dist_threshold) << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n";
+                        } else {
+                            std::cerr << "[SAE] SAE returned " << detector_output << ", not creating new track.\n";
+                        }
                     }
                 }
 

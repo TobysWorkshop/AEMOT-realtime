@@ -48,6 +48,11 @@ void TrackManager::update_event_rate_threshold(double threshold)
     this->event_rate_threshold = threshold;
 }
 
+void TrackManager::update_rate_per_area(double rate_per_area)
+{
+    this->rate_per_area = rate_per_area;
+}
+
 void TrackManager::store_parameters(double ts_age, double dt_terminate, double low_activity_factor){
     this->evaluate_ts_age = ts_age;
     this->evaluate_dt_terminate = dt_terminate;
@@ -169,8 +174,6 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
 
         const double min_area = 50.0; // prevent division by zero for tiny blobs
         double area = std::max(std::abs(x(4) * x(5)), min_area); // area = width * height
-
-        const double rate_per_area = 1.0; // move this to parameters to be tuned
 
         double required_rate = rate_per_area * area; // threshold scales with area
         required_rate = std::max(required_rate, evaluate_low_activity_factor * event_rate_threshold); // ensure it doesn't go below the base threshold so we don't squash small blobs' hopes and dreams

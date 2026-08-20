@@ -72,6 +72,8 @@ struct Parameters
   double evaluate_low_activity_factor;
 
   int pool_size;
+  int use_dt_detector;
+  double rate_per_area;
 };
 
 struct DisplayParams

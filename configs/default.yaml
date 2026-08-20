@@ -111,4 +111,7 @@ evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to del
 event_rate_threshold          : 1000   # event rate required for validation
 
 
-pool_size : 20
+# New parameters
+pool_size : 20 # how many Kalman filters to keep in memory for reuse. This is to avoid the overhead of creating and destroying Kalman filters for each new track.
+use_dt_detector: 0 # 1 = use the dt detector, 0 = use the standard SAE detector.
+rate_per_area: 1.0 # factor to scale the event rate threshold based on the area of the blob (events/area). This allows larger blobs to have a higher threshold for activity, while smaller blobs can be validated with fewer events.
