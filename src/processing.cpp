@@ -502,7 +502,7 @@ namespace processing {
             // This is a simpler replacement to the original variable gating logic - should be faster.
             // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min_sq < params.dist_threshold_sq)
+            if (dist_min_sq < dist_threshold_sq)
             {
                 //debug
                 AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
@@ -586,7 +586,7 @@ namespace processing {
 
                 double_track_evaluation_counter = 0;
                 auto ids = track_manager->evaluateDoubleTracks();
-                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());
+                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
             }
             // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
@@ -595,7 +595,7 @@ namespace processing {
 
                 full_evaluation_counter = 0;
                 auto ids = track_manager->evaluateTracks(ts);
-                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());  
+                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());  
             }
             // (c) Fallback: only delete tracks that have left the frame (position-only check).
             if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
@@ -603,11 +603,11 @@ namespace processing {
                 //std::cout << "[track eval] Checking position (frame edge) only...\n";
 
                 auto ids = track_manager->evaluateTracksPosition();
-                deleted_IDs_scratch.insert(deleted_IDs.end(), ids.begin(), ids.end());
+                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
             }
 
             // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.
-            if (!deleted_IDs.empty()) {
+            if (!deleted_IDs_scratch.empty()) {
                 while(!same_ts_e_buffer.empty()){
                     same_ts_e_buffer.pop();
                 }

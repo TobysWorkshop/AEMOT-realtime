@@ -132,10 +132,10 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->active = true;
 
             //debug
-            std::cerr << "[new] slot=" << i
-                        << " xy=(" << new_point(0) << "," << new_point(1) << ")"
-                        << " t0=" << new_point(2)
-                        << " activeCount=" << activeCount() << std::endl;
+            //std::cerr << "[new] slot=" << i
+            //            << " xy=(" << new_point(0) << "," << new_point(1) << ")"
+            //            << " t0=" << new_point(2)
+            //            << " activeCount=" << activeCount() << std::endl;
 
             if (f_decode){
                 kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
@@ -186,16 +186,16 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
         // Always allow deletion for these hard failures
         if (out_of_frame || inactive || bad_shape || low_activity) {
             //debug
-            std::cerr << "[del] id=" << i
-                            << " age=" << (ts_now - output_tracks[i]->get_t0())
-                            << " out=" << out_of_frame
-                            << " inact=" << inactive
-                            << " low=" << low_activity
-                            << " shape=" << bad_shape
-                            << " rate=" << (1.0 / output_tracks[i]->dt_moving_avg)
-                            << " thr=" << required_rate
-                            << " val=" << output_tracks[i]->validated
-                            << std::endl;
+            //std::cerr << "[del] id=" << i
+            //                << " age=" << (ts_now - output_tracks[i]->get_t0())
+            //                << " out=" << out_of_frame
+            //                << " inact=" << inactive
+            //                << " low=" << low_activity
+            //                << " shape=" << bad_shape
+            //                << " rate=" << (1.0 / output_tracks[i]->dt_moving_avg)
+            //                << " thr=" << required_rate
+            //                << " val=" << output_tracks[i]->validated
+            //                << std::endl;
 
             deleted_IDs.push_back(i);
             deleteTrack(output_tracks, i);

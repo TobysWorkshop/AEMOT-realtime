@@ -238,7 +238,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
 
         // Compute dt term
         double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_inv(idx, idx) = 1/exp_term;
+        W_diag(idx, idx) = 1.0 /exp_term;
 
         idx++;
     }

@@ -187,7 +187,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   // NOTE: CHANGE THESE TO FIXED SIZE ARRAYS!
 
   // Propagate updated state (predict and update)
-  x_hat.block(id, 0, 1, n_state).noalias() =
+  x_hat.block(id, 0, 1, n_state) =
       (F.block(id * n_state, 0, n_state, n_state) * x_hat.block(id, 0, 1, n_state).transpose())
           .transpose();
 
@@ -197,7 +197,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       Q * dt;
   
   // Propagate the predict only state
-  x_hat_pred.block(id, 0, 1, n_state).noalias() =
+  x_hat_pred.block(id, 0, 1, n_state) =
       (F.block(id * n_state, 0, n_state, n_state) * x_hat_pred.block(id, 0, 1, n_state).transpose())
           .transpose();
 
