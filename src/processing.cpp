@@ -150,6 +150,7 @@ namespace processing {
     // touch OpenCV's GUI/window/video-writer APIs; all of that lives in
     // render_frame() on the render thread instead.
     void publish_frame(double ts) {
+        high_pass_global(ts, params.alpha);
         if (frame_output == nullptr) {
             return; // shouldn't happen if setup() succeeded, but don't crash if it does
         }
@@ -615,7 +616,7 @@ namespace processing {
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
             if (params.publish_framerate > 0 && ts > t_next_publish) {
-                high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
+                //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
                 publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
                 t_next_publish = ts + (1.0 / params.publish_framerate);
             }
