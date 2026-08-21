@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "kalman.hpp"
+#include "track_logger.hpp"
 
 class TrackManager
 {
@@ -61,11 +62,19 @@ public:
 
     inline KalmanFilter* getTrackUnchecked(int id) { return output_tracks[id]; }
 
+    //logging
+    void setLogger(TrackLogger* logger);
+    void logTrackUpdate(int slot, double ts, const double* x_hat_data);
+
+
 private:
     //------------------------------------------//
     //-----        PRIVATE FUNCTIONS       -----//
     //------------------------------------------//
     void deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id);
+
+    //logging
+    void flushBacklog(int slot);
 
     //------------------------------------------//
     //-----        PRIVATE VARIABLES       -----//
@@ -101,6 +110,10 @@ private:
     double rate_per_area = 1.0;
 
     int active_track_count_ = 0;
+
+    //logging
+    TrackLogger* logger_ = nullptr;
+    std::vector<std::vector<KalmanLogRecord>> log_backlogs_;
 };
 
 #endif

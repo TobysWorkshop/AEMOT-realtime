@@ -135,6 +135,9 @@ KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->active = true;
             active_track_count_++;
 
+            // logging: clear out any leftover backlog from whatever track used this slot last
+            log_backlogs_[i].clear();
+
             //debug
             //std::cerr << "[new] slot=" << i
             //            << " xy=(" << new_point(0) << "," << new_point(1) << ")"
@@ -146,6 +149,10 @@ KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             }
 
             next_unique_id++;
+
+            // Log this track's initial state - buffered until (if) it validates.
+            logTrackUpdate(i, new_point(2), kf->state_data());
+
             return kf; // stop after filling one inactive slot
         }
     }
@@ -212,6 +219,9 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
                 if (f_decode){
                    output_tracks[i]->decoder->open_G_file();
                 }
+
+                // Logging: track just got promoted - write out everything in its buffer and then log straight through from now on
+                flushBacklog(i);
             }
         }
     }
@@ -319,6 +329,46 @@ void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::s
     decoder_contrast_threshold = contrast_threshold;
 }
 
+
+//************************************************************************************//
+//**********                            LOGGING                             **********//
+//************************************************************************************//
+void TrackManager::logTrackUpdate(int slot, double ts, const double* x_hat_data)
+{
+    if (!logger_) return; // logging not wired up - nothing to do
+
+    KalmanFilter* kf = output_tracks[slot];
+
+    if (kf->validated) {
+        // Already validated (and therefore already flushed) - log straight through.
+        logger_->log(static_cast<uint64_t>(kf->getID()), ts, x_hat_data);
+        return;
+    }
+
+    // Not validated (yet) - hold onto it in this slot's backlog. If the
+    // track later validates, evaluateTracks() flushes this in order via
+    // flushBacklog(). If it gets deleted first, deleteTrack() drops it.
+    KalmanLogRecord rec;
+    rec.track_id = static_cast<uint64_t>(kf->getID());
+    rec.ts = ts;
+    std::memcpy(rec.x_hat, x_hat_data, sizeof(rec.x_hat));
+    log_backlogs_[slot].push_back(rec);
+}
+
+void TrackManager::flushBacklog(int slot)
+{
+    if (!logger_) {
+        log_backlogs_[slot].clear();
+        return;
+    }
+
+    auto& backlog = log_backlogs_[slot];
+    for (const auto& rec : backlog) {
+        logger_->log(rec.track_id, rec.ts, rec.x_hat);
+    }
+    backlog.clear();
+}
+
 //------------------------------------------//
 //-----        PRIVATE FUNCTIONS       -----//
 //------------------------------------------//
@@ -328,5 +378,8 @@ void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int tra
     if (kf->active) {
         kf->active = false; // Mark the Kalman filter as inactive
         active_track_count_--;
+
+        // logging: clear out this track's log
+        log_backlogs_[track_id].clear();
     }
 }

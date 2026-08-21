@@ -402,6 +402,7 @@ namespace processing {
         track_manager->store_parameters(
             params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
         );
+        track_manager->setLogger(track_logger.get());
 
         return true;
     } // end setup()
@@ -531,8 +532,8 @@ namespace processing {
                 f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
                 KalmanFilter* associated_trk = track_manager->getTrackUnchecked(id);
                 associated_trk->update(e, 0, p);
-                // log the post-update state:
-                track_logger->log(static_cast<uint64_t>(associated_trk->getID()), ts, associated_trk->state_data());
+                // log the post-update state, buffered until validated
+                track_manager->logTrackUpdate(id, ts, associated_trk->state_data());
             }
             
 
@@ -557,11 +558,7 @@ namespace processing {
                     }
 
                     if (detector_output_dt == 1) {
-                        KalmanFilter* new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
-                        if (new_trk) {
-                            // log this track's initial state:
-                            track_logger->log(static_cast<uint64_t>(new_trk->getID()), ts, new_trk->state_data());
-                        }
+                        track_manager->createNewTrack({(double)c, (double)r, ts});
                     }
 
                 } else { // standard detector route
@@ -581,11 +578,8 @@ namespace processing {
                         
                         detection_event_count = 0;
         
-                        KalmanFilter* new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
-                        if (new_trk) {
-                            // log this track's initial state:
-                            track_logger->log(static_cast<uint64_t>(new_trk->getID()), ts, new_trk->state_data());
-                        }
+                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                        
                         AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
                                 << " active=" << track_manager->activeCount() << "\n");
                     } else {

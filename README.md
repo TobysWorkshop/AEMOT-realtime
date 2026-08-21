@@ -119,3 +119,13 @@ Where `<config_name>` follows the same requirements as above, and `<.es_file_loc
 ```
 ./build/aemot_replay <config_name> ./data/<file_name>.es
 ```
+
+## Logging tracks to a file
+The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.
+
+The file format looks like the following:  
+...WIP...
+
+Upon starting a run, a .bees file for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>_kalman_logs.bees`.
+
+
