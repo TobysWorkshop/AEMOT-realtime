@@ -123,8 +123,21 @@ Where `<config_name>` follows the same requirements as above, and `<.es_file_loc
 ## Logging tracks to a file
 The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.
 
-The file format looks like the following:  
-...WIP...
+### <ins>.bees File Format:</ins>
+
+| Item | Type | Value | Bytes |
+| -------- | -------- | -------- | -------- |
+| **<ins>Header (24 bytes)</ins>** |
+| Magic bytes  | char[8] | "A E M O T L O G"  | 8  |
+| version | uint32 | 1 | 4 |
+| n_state | uint32 | 10, *length of each track update's state vector* | 4 |
+| record_size | uint32 | *total number of track update entries in the file* | 4 |
+| reserved | uint32 | 0 | 4 |
+| **<ins>Kalman log record (96 bytes), repeated</ins>** |
+| track_id | uint64 | *unique id of the track this update belongs to* | 8 |
+| ts | double | time | 8 |
+| Kalman filter state vector, *x_hat[10]* | double | x, y, vx, vy, lambda1, lambda2, theta, q, reserved1, reserved2 | 80 |
+| **. . .** |
 
 Upon starting a run, a .bees file for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>_kalman_logs.bees`.
 
