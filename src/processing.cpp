@@ -52,6 +52,7 @@ namespace processing {
         DisplayParams dispParams;
         std::unique_ptr<TrackManager> track_manager;
         std::unique_ptr<SAEdetector> detector;
+        std::unique_ptr<TrackLogger> track_logger;
 
         frame_queue* frame_output = nullptr;
 
@@ -312,14 +313,23 @@ namespace processing {
 
         deleted_IDs_scratch.reserve(8);
 
-        // TrackLogger 
+        // TrackLogger //
+        // Create a unique filename for the log file based on the current timestamp
         auto const now = std::chrono::system_clock::now();
-        auto const local_time = std::chrono::current_zone()->to_local(now);
+        std::time_t const now_time_t = std::chrono::system_clock::to_time_t(now);
+        // Convert to local time safely
+        std::tm local_tm;
+        #if defined(_WIN32)
+            localtime_s(&local_tm, &now_time_t);
+        #else
+            localtime_r(&now_time_t, &local_tm); // Thread-safe POSIX alternative
+        #endif
+        std::stringstream ss;
+        ss << std::put_time(&local_tm, "%d-%m-%Y-%H-%M-%S");
+        std::string formatted = ss.str();
 
-        // Format output (Example: 2026-08-21 11:30:00)
-        std::string formatted = std::format("{:%d-%m-%Y-%H-%M-%S}", local_time);
         try {
-            track_logger = std::make_unique<TrackLogger>(input_event_path + "_" + formatted + "_kalman_log.bees"); // Binary Event Evolution Storage
+            track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + "_kalman_log.bees"); // Binary Event Evolution Storage
         } catch (const std::exception &ex) {
             std::cerr << "Error: " << ex.what() << std::endl;
             return false;

@@ -37,6 +37,7 @@ set(SHARED_SOURCES
     src/parameters_decoding.cpp
     src/parameters.cpp
     src/SAE.cpp
+    src/track_logger.cpp
 )
 
 add_executable(aemot_realtime

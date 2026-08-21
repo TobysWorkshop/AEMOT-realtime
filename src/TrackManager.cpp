@@ -112,7 +112,7 @@ std::vector<int> TrackManager::getValidTrackIds()
 //**********                        SPAWN CANDIDATES                        **********//
 //************************************************************************************//
 // Create new candidate tracker
-void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
+KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
 {
     for (int i = 0; i < output_tracks.size(); ++i)
     {
@@ -146,11 +146,12 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             }
 
             next_unique_id++;
-            return; // stop after filling one inactive slot
+            return kf; // stop after filling one inactive slot
         }
     }
     
     std::cout << "Warning! Kalman lineup is exhausted - no free slot for an new track! Consider increasing pool_size.\n";
+    return nullptr; // returns a nullptr if no track was actively created
 }
 
 bool TrackManager::hasAvailableSlot()
