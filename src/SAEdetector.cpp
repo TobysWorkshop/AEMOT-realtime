@@ -48,6 +48,12 @@ SAEdetector::SAEdetector(int height, int width, int ksize, double alpha, double 
     t_patch.resize(m_ksize, m_ksize);
     t_patch.setZero();
 
+    // scratch buffers for optimisation
+    const int max_patch_points = m_ksize * m_ksize;
+    A_scratch.resize(max_patch_points, 2);
+    A_scratch.setZero();
+    W_scratch.resize(max_patch_points);
+    W_scratch.setZero();
 
     // Set up patch points/pairs
     patch_offset = Eigen::VectorXd::LinSpaced(m_ksize, -m_ksize/2, m_ksize/2);
@@ -162,8 +168,8 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
     }
 
     int num_init_points = init_events_patch.sum() - 1;
-    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_init_points, 2);
-    Eigen::VectorXd W_diag = Eigen::VectorXd::Zero(num_init_points);
+    auto A = A_scratch.topRows(num_init_points);
+    auto W_diag = W_scratch.head(num_init_points);
 
     int idx = 0;
     for (int i = 0; i < patch_points.size(); i++){   
@@ -182,7 +188,7 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
 
         // Compute dt term
         double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_diag(idx, idx) = 1.0 /exp_term;
+        W_diag(idx) = 1.0 /exp_term;
 
         idx++;
     }
@@ -218,8 +224,8 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
     }
     
     int num_init_points = init_directions_patch.sum() - 1;
-    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_init_points, 2);
-    Eigen::VectorXd W_diag = Eigen::VectorXd::Zero(num_init_points);
+    auto A = A_scratch.topRows(num_init_points);
+    auto W_diag = W_scratch.head(num_init_points);
 
     int idx = 0;
     for (int i = 0; i < patch_points.size(); i++){   
@@ -238,7 +244,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
 
         // Compute dt term
         double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_diag(idx, idx) = 1.0 /exp_term;
+        W_diag(idx) = 1.0 /exp_term;
 
         idx++;
     }
@@ -254,7 +260,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
 
     double l_inner = std::abs(l_event.transpose() * l_est);
 
-        // Check if the magnitude of the difference is below our threshold
+    // Check if the magnitude of the difference is below our threshold
     if (l_inner >= m_detection_threshold){
         return 1;
     } 

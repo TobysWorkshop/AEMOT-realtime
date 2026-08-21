@@ -30,6 +30,7 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
         kf->active = false;
         output_tracks.push_back(kf);
     }
+    active_track_count_ = 0;
 };
 
 void TrackManager::update_default_dist_threshold(double dist_threshold)
@@ -74,6 +75,7 @@ TrackManager::~TrackManager()
 std::vector<KalmanFilter *> TrackManager::getTracks()
 {
     std::vector<KalmanFilter *> active_tracks;
+    active_tracks.reserve(active_track_count_);
     for (auto *kf : output_tracks)
     {
         if (kf->active) active_tracks.push_back(kf);
@@ -95,6 +97,7 @@ KalmanFilter *TrackManager::getTrack(int id)
 std::vector<int> TrackManager::getValidTrackIds()
 {
     std::vector<int> valid_ids;
+    valid_ids.reserve(active_track_count_);
     for (int i = 0; i < output_tracks.size(); ++i)
     {
         if (output_tracks[i]->active) // or add more checks if needed
@@ -130,6 +133,7 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->setID(next_unique_id);
             kf->validated = 0;
             kf->active = true;
+            active_track_count_++;
 
             //debug
             //std::cerr << "[new] slot=" << i
@@ -151,11 +155,7 @@ void TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
 
 bool TrackManager::hasAvailableSlot()
 {
-    for (auto *kf : output_tracks)
-    {
-        if (!kf->active) return true;
-    }
-    return false;
+    return active_track_count_ < pool_size;
 }
 //************************************************************************************//
 //**********                        EVALUATE TRACKS                         **********//
@@ -296,9 +296,7 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
 
 int TrackManager::activeCount()
 {
-    int count = 0;
-    for (auto *kf : output_tracks) if (kf->active) count++;
-    return count;
+    return active_track_count_;
 }
 
 //************************************************************************************//
@@ -326,5 +324,8 @@ void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::s
 void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id)
 {
     KalmanFilter *kf = track_array[track_id];
-    kf->active = false; // Mark the Kalman filter as inactive
+    if (kf->active) {
+        kf->active = false; // Mark the Kalman filter as inactive
+        active_track_count_--;
+    }
 }

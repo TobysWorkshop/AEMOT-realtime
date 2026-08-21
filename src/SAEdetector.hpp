@@ -77,6 +77,8 @@ private:
     std::vector<std::pair<int, int>> patch_points;
     Eigen::Vector<double, 3> no_detection = Eigen::Vector<double, 3> ::Constant(-1);
     
+    Eigen::MatrixXd A_scratch; // (ksize*ksize) x 2, preallocated in ctor
+    Eigen::VectorXd W_scratch; // (ksize*ksize), preallocated in ctor
 };
 
 #endif

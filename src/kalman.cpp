@@ -18,7 +18,7 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
                            const Eigen::MatrixXd &P, const Eigen::MatrixXd &A,
                            const Eigen::MatrixXd &x0, int n_state,
                            int ring_buffer_len)
-    : F(F), C(C), Q(Q), R(R), P0(P), A(A), dt(dt), initialized(false), I(F.cols(), F.cols()),
+    : F(F), C(C), Q(Q), R(R), P0(P), A(A), dt(dt), initialized(false),
       x_hat(x0), n_state(n_state), ring_buffer_len(ring_buffer_len)
 {
   I.setIdentity();
@@ -176,9 +176,9 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
 
   ts_last[id] = e(2);
 
-  F(id * n_state, 2) = dt;
-  F(id * n_state + 1, 3) = dt;
-  F(id * n_state + 6, 7) = dt;
+  F(0, 2) = dt;
+  F(1, 3) = dt;
+  F(6, 7) = dt;
 
   //------------------------------------------------//
   //-----              PREDICTION              -----//
@@ -187,66 +187,53 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   // NOTE: CHANGE THESE TO FIXED SIZE ARRAYS!
 
   // Propagate updated state (predict and update)
-  x_hat.block(id, 0, 1, n_state) =
-      (F.block(id * n_state, 0, n_state, n_state) * x_hat.block(id, 0, 1, n_state).transpose())
-          .transpose();
+  x_hat = (F * x_hat.transpose()).transpose();
+  P = F * P * F.transpose() + Q * dt;
 
-  P.block(id * n_state, 0, n_state, n_state) =
-      F.block(id * n_state, 0, n_state, n_state) * P.block(id * n_state, 0, n_state, n_state) *
-          F.block(id * n_state, 0, n_state, n_state).transpose() +
-      Q * dt;
+  x_hat_pred = (F * x_hat_pred.transpose()).transpose();
+  P_pred = F * P_pred * F.transpose() + Q * dt;
   
-  // Propagate the predict only state
-  x_hat_pred.block(id, 0, 1, n_state) =
-      (F.block(id * n_state, 0, n_state, n_state) * x_hat_pred.block(id, 0, 1, n_state).transpose())
-          .transpose();
-
-  P_pred.block(id * n_state, 0, n_state, n_state) =
-      F.block(id * n_state, 0, n_state, n_state) * P_pred.block(id * n_state, 0, n_state, n_state) *
-          F.block(id * n_state, 0, n_state, n_state).transpose() +
-      Q * dt;
-  
-
-  rotation_m << cos(x_hat(id, 6)), -sin(x_hat(id, 6)), sin(x_hat(id, 6)), cos(x_hat(id, 6));
+  rotation_m << cos(x_hat(0, 6)), -sin(x_hat(0, 6)), sin(x_hat(0, 6)), cos(x_hat(0, 6));
+  const Eigen::Matrix2d rotation_m_T = rotation_m.transpose();
 
   // A is 1 on lambda
   A << 1 / x_hat(id, 4), 0, 0, 1 / x_hat(id, 5);
-  A_rotation = rotation_m * A * rotation_m.transpose();
+  A_rotation = rotation_m * A * rotation_m_T;
 
   if (p <= 0)
   {
-    e_tilda << e(0) + x_hat(id, 8) - x_hat(id, 0), e(1) + x_hat(id, 9) - x_hat(id, 1);
-    ring_buffer_delta[id].push_back({x_hat(id, 8), x_hat(id, 9)});
+    e_tilda << e(0) + x_hat(0, 8) - x_hat(0, 0), e(1) + x_hat(0, 9) - x_hat(0, 1);
+    ring_buffer_delta[id].push_back({x_hat(0, 8), x_hat(0, 9)});
   }
   else
   {
-    e_tilda << e(0) - x_hat(id, 8) - x_hat(id, 0), e(1) - x_hat(id, 9) - x_hat(id, 1);
-    ring_buffer_delta[id].push_back({-x_hat(id, 8), -x_hat(id, 9)});
+    e_tilda << e(0) - x_hat(0, 8) - x_hat(0, 0), e(1) - x_hat(0, 9) - x_hat(0, 1);
+    ring_buffer_delta[id].push_back({-x_hat(0, 8), -x_hat(0, 9)});
   }
 
   y_hat = A_rotation * e_tilda;
   y_hat_sum << 0, 0;
   y_square_sum = 0;
-  C.block(0, 0, 2, 2) << -A_rotation;
-  C.block(0, 2, 2, 2) << 0, 0, 0, 0;
-  C_lambda_diag = A * A * rotation_m.transpose() * e_tilda;
+  C.block<2, 2>(0, 0) << -A_rotation;
+  C.block<2, 2>(0, 2) << 0, 0, 0, 0;
+  C_lambda_diag = A * A * rotation_m_T * e_tilda;
   C_lambda << C_lambda_diag(0), 0, 0, C_lambda_diag(1);
-  C.block(0, 4, 2, 2) << -rotation_m * C_lambda;
-  C.block(0, 6, 2, 1) << rotation_m * (Omiga * A - A * Omiga) * rotation_m.transpose() * e_tilda;
-  C.block(0, 7, 2, 1) << 0, 0;
+  C.block<2, 2>(0, 4) << -rotation_m * C_lambda;
+  C.block<2, 1>(0, 6) << rotation_m * (Omiga * A - A * Omiga) * rotation_m_T * e_tilda;
+  C.block<2, 1>(0, 7) << 0, 0;
 
   if (p <= 0)
   {
-    C.block(0, 8, 2, 2) << A_rotation;
+    C.block<2, 2>(0, 8) << A_rotation;
   }
   else
   {
-    C.block(0, 8, 2, 2) << -A_rotation;
+    C.block<2, 2>(0, 8) << -A_rotation;
   }
 
-  C.block(2, 0, 1, n_state) << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  C.block<1, N_STATE>(2, 0) << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   ring_buffer_e[id].push_back({e(0), e(1), e(2), p});
-  ring_buffer_x[id].push_back({x_hat(id, 0), x_hat(id, 1)});
+  ring_buffer_x[id].push_back({x_hat(0, 0), x_hat(0, 1)});
   ring_buffer_rot[id].push_back(rotation_m);
 
   // if (ring_buffer_e[id].size() >= 2)
@@ -265,7 +252,7 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       rotation_m_buf = ring_buffer_rot[id][i];
       y_hat_buffer = rotation_m_buf * A * rotation_m_buf.transpose() * e_tilda_buffer;
       y_hat_sum += y_hat_buffer;
-      y_square_sum += pow(y_hat_buffer(0), 2) + pow(y_hat_buffer(1), 2);
+      y_square_sum += y_hat_buffer.squaredNorm();
 
       temp_diag = A * A * rotation_m_buf.transpose() * e_tilda_buffer;
       temp << temp_diag(0), 0, 0, temp_diag(1);
@@ -273,17 +260,16 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
       y_lambda = -2 * y_hat_buffer.transpose() * rotation_m_buf * temp;
       y_lambda_sum += y_lambda;
     }
-    C.block(2, 4, 1, 2) += y_lambda_sum;
+    C.block<1, 2>(2, 4) += y_lambda_sum;
   }
 
   // Innovation covariance
   R(2, 2) = 4 * ring_buffer_e[id].size();
-  S = C * P.block(id * n_state, 0, n_state, n_state) * C.transpose() + R;
-  K = P.block(id * n_state, 0, n_state, n_state) * C.transpose() * S.inverse();
+  S = C * P * C.transpose() + R;
+  K = P * C.transpose() * S.inverse();
   y_hat_fuse << y_hat, y_square_sum;
   y_true.coeffRef(2, 0) = 2 * ring_buffer_e[id].size();
-  x_hat.block(id, 0, 1, n_state) += (K * (y_true - y_hat_fuse)).transpose(); // y = {0, 0}
-  P.block(id * n_state, 0, n_state, n_state) =
-      (I - K * C) * P.block(id * n_state, 0, n_state, n_state);
+  x_hat.noalias() += (K * (y_true - y_hat_fuse)).transpose();
+  P = (I - K * C) * P;
       
 }

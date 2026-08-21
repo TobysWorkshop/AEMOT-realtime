@@ -81,7 +81,6 @@ namespace processing {
         bool f_associated_this_ts = false;
         bool f_write_position = false;
         Eigen::Vector3d e;              // event measurement, packed as (x, y, ts) each iteration
-        Eigen::MatrixXd x_hat_track, P_track;
 
         std::vector<int> deleted_IDs_scratch;
 
@@ -481,9 +480,10 @@ namespace processing {
             // itterate through the track manager's current tracks to find the closest
             for (int i = 0; i < n_tracks; i++)
             {
+                KalmanFilter* trk = track_manager->getTrackUnchecked(i);
                 // if the track isn't active (just a waiting container), skip it
-                if (!track_manager->getTrack(i)->active) continue;
-                auto* trk = track_manager->getTrack(i);
+                if (!trk->active) continue;
+
                 const double dx = static_cast<double>(c) - trk->pos_x();
                 const double dy = static_cast<double>(r) - trk->pos_y();
                 const double d_sq = dx * dx + dy * dy;
@@ -492,10 +492,6 @@ namespace processing {
                 {
                     dist_min_sq = d_sq;
                     id = i; // remember the index of the closest track
-
-                    //debug
-                    //std::cout << "Found closer track. ID: " << i << ". Distance: " << dist_min << "\n";
-
                 }
             }
 
@@ -508,7 +504,7 @@ namespace processing {
                 AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
 
                 f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
-                track_manager->getTrack(id)->update(e, 0, p);
+                track_manager->getTrackUnchecked(id)->update(e, 0, p);
             }
             
 
@@ -619,7 +615,7 @@ namespace processing {
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
             if (params.publish_framerate > 0 && ts > t_next_publish) {
-                high_pass_global(ts, params.alpha);
+                high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
                 publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
                 t_next_publish = ts + (1.0 / params.publish_framerate);
             }

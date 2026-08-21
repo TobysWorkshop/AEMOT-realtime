@@ -119,6 +119,10 @@ public:
   bool active = false;
   double dt_moving_avg = 1;
 
+  // for optimisation:
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  static constexpr int N_STATE = 10;
+
   // for fast processing.cpp lookup:
   inline double pos_x() const { return x_hat(0, 0); }
   inline double pos_y() const { return x_hat(0, 1); }
@@ -134,7 +138,16 @@ private:
   int n_state;
   int n_target = 1;
   // Matrices for computation
-  Eigen::MatrixXd F, C, Q, R, P, K, P0, A;
+  Eigen::Matrix<double, N_STATE, N_STATE> F, P, P0, Q, I, P_pred;
+  Eigen::Matrix<double, 3, N_STATE>       C;
+  Eigen::Matrix3d                          R, S;
+  Eigen::Matrix2d                          A;
+  Eigen::Matrix<double, 1, N_STATE>        x_hat, x_hat_pred;
+  Eigen::Matrix<double, N_STATE, 3>        K;
+
+  Eigen::Matrix2d rotation_m, rotation_m_buf, A_rotation, Omiga, C_lambda, temp;
+  Eigen::Vector2d e_tilda, e_tilda_buffer, y_hat, y_hat_sum, y_hat_buffer, C_lambda_diag, temp_diag, y_lambda, y_lambda_sum;
+  Eigen::Vector3d y_true, y_hat_fuse;
 
   // System dimensions
   int m, n;
@@ -151,28 +164,11 @@ private:
   // Is the filter initialized?
   bool initialized;
 
-  // n-size identity
-  Eigen::MatrixXd I;
-
-  // Estimated states
-  Eigen::MatrixXd x_hat;
-
   std::vector<double> ts_last;
   double ts_last_for_gamma;
 
-  Eigen::Vector2d e_tilda, y_hat, y_hat_sum, y_hat_buffer, e_tilda_buffer;
-  Eigen::MatrixXd S, sqrtMinv;
   double y_square_sum, theta_buf;
-  Eigen::Matrix<double, 3, 1> y_hat_fuse, y_true;
-  Eigen::MatrixXd I2 = Eigen::MatrixXd::Identity(2, 2);
-  std::ofstream track_output_txt_;
 
-  Eigen::Matrix2d rotation_m, rotation_m_buf, diag_m, Omiga, A_rotation, C_lambda;
-  Eigen::Matrix<double, 2, 1> C_lambda_diag;
-
-  Eigen::Matrix<double, 1, 2> y_lambda, y_lambda_sum;
-  Eigen::Matrix<double, 2, 1> temp_diag;
-  Eigen::Matrix2d temp;
   int ring_buffer_len;
   double vx_gyro = 0;
   double vy_gyro = 0;
@@ -183,11 +179,8 @@ private:
   std::vector<boost::circular_buffer<Eigen::Matrix2d>> ring_buffer_rot;
   std::vector<boost::circular_buffer<std::pair<double, double>>> ring_buffer_delta;
 
-
   bool f_equivalent_measurement_init = 0;
   int equiv_measurement_step = 1;
   int equiv_measurement_count = 0;
-  Eigen::MatrixXd x_hat_pred, P_pred;
-
 
 };

@@ -59,6 +59,8 @@ public:
 
     int activeCount();
 
+    inline KalmanFilter* getTrackUnchecked(int id) { return output_tracks[id]; }
+
 private:
     //------------------------------------------//
     //-----        PRIVATE FUNCTIONS       -----//
@@ -98,7 +100,7 @@ private:
 
     double rate_per_area = 1.0;
 
-    // params.dt, F, C, Q, R, P, A, x0, n_state, params.ring_buffer_len
+    int active_track_count_ = 0;
 };
 
 #endif
