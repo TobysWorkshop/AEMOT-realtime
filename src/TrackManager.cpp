@@ -31,6 +31,9 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
         output_tracks.push_back(kf);
     }
     active_track_count_ = 0;
+
+    // one backlog slot per pool slot
+    log_backlogs_.resize(pool_size);
 };
 
 void TrackManager::update_default_dist_threshold(double dist_threshold)
@@ -58,6 +61,11 @@ void TrackManager::store_parameters(double ts_age, double dt_terminate, double l
     this->evaluate_ts_age = ts_age;
     this->evaluate_dt_terminate = dt_terminate;
     this->evaluate_low_activity_factor = low_activity_factor;
+}
+
+void TrackManager::setLogger(TrackLogger* logger)
+{
+    logger_ = logger;
 }
 
 TrackManager::~TrackManager()
