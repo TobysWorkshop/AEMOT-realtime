@@ -24,7 +24,7 @@ public:
                  int pool_size);
 
     // Add track to output
-    void createNewTrack(Eigen::Vector<double,3> new_point);
+    KalmanFilter* createNewTrack(Eigen::Vector<double,3> new_point);
 
     // Evaluation
     std::vector<int> evaluateTracks(double ts);

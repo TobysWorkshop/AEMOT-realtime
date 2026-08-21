@@ -127,6 +127,10 @@ public:
   inline double pos_x() const { return x_hat(0, 0); }
   inline double pos_y() const { return x_hat(0, 1); }
 
+  // for logging purposes
+  inline int getID() const { return track_id; } // returns the track's persistent unique ID
+  inline const double* state_data() const { return x_hat.data(); } // easy fast way to access the kalman state data for logging
+
   //destructor
   ~KalmanFilter();
 

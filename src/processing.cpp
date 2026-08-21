@@ -6,6 +6,7 @@
 #include "parameters.h"     
 #include "TrackManager.hpp" 
 #include "SAEdetector.hpp"  
+#include "track_logger.hpp"
 
 // Other includes
 #include <cstdint>
@@ -310,6 +311,19 @@ namespace processing {
 
         deleted_IDs_scratch.reserve(8);
 
+        // TrackLogger 
+        auto const now = std::chrono::system_clock::now();
+        auto const local_time = std::chrono::current_zone()->to_local(now);
+
+        // Format output (Example: 2026-08-21 11:30:00)
+        std::string formatted = std::format("{:%d-%m-%Y-%H-%M-%S}", local_time);
+        try {
+            track_logger = std::make_unique<TrackLogger>(input_event_path + "_" + formatted + "_kalman_log.bees"); // Binary Event Evolution Storage
+        } catch (const std::exception &ex) {
+            std::cerr << "Error: " << ex.what() << std::endl;
+            return false;
+        }
+
         // NOTE: display window / video writer / output-image-folder setup
         // used to happen right here. It's now in render_setup(), which
         // runs on the dedicated render thread instead - see processing.hpp
@@ -504,7 +518,10 @@ namespace processing {
                 AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
 
                 f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
-                track_manager->getTrackUnchecked(id)->update(e, 0, p);
+                KalmanFilter* associated_trk = track_manager->getTrackUnchecked(id);
+                associated_trk->update(e, 0, p);
+                // log the post-update state:
+                track_logger->log(static_cast<uint64_t>(associated_trk->getID()), ts, associated_trk->state_data());
             }
             
 
@@ -529,7 +546,11 @@ namespace processing {
                     }
 
                     if (detector_output_dt == 1) {
-                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                        KalmanFilter* new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                        if (new_trk) {
+                            // log this track's initial state:
+                            track_logger->log(static_cast<uint64_t>(new_trk->getID()), ts, new_trk->state_data());
+                        }
                     }
 
                 } else { // standard detector route
@@ -549,7 +570,11 @@ namespace processing {
                         
                         detection_event_count = 0;
         
-                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                        KalmanFilter* new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                        if (new_trk) {
+                            // log this track's initial state:
+                            track_logger->log(static_cast<uint64_t>(new_trk->getID()), ts, new_trk->state_data());
+                        }
                         AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
                                 << " active=" << track_manager->activeCount() << "\n");
                     } else {
@@ -625,6 +650,11 @@ namespace processing {
     void teardown() {
         if (writer.isOpened()) {
             writer.release();
+        }
+
+        // flush any remaining logs from the logger's buffer onto the writer thread before shutdown!
+        if (track_logger) {
+            track_logger->close();
         }
 
         std::cout << "processed " << total_events << " events total\n";
