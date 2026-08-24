@@ -229,7 +229,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
             if (low_activity) reason |= TrackDeleteReason::LOW_ACTIVITY;
 
             deleted_IDs.push_back(i);
-            deleteTrack(output_tracks, i);
+            deleteTrack(output_tracks, i, reason);
             continue;
         }
 
@@ -270,7 +270,7 @@ std::vector<int> TrackManager::evaluateTracksPosition(){
 
         if(out_of_frame){
             deleted_IDs.push_back(i);
-            deleteTrack(output_tracks, i);        
+            deleteTrack(output_tracks, i, TrackDeleteReason::OUT_OF_FRAME);        
             continue;
         }
     }
@@ -322,7 +322,7 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
     // Deleted tracks
     for (int i = deleted_IDs_temp.size() - 1; i >= 0; i--){
         deleted_IDs.push_back(deleted_IDs_temp[i]);
-        deleteTrack(output_tracks, deleted_IDs_temp[i]); 
+        deleteTrack(output_tracks, deleted_IDs_temp[i], TrackDeleteReason::DUPLICATE_TRACK); 
         // std::cout << "Uh oh\n";       
     }
 
@@ -472,7 +472,7 @@ void TrackManager::flushAllSummaries()
 //------------------------------------------//
 //-----        PRIVATE FUNCTIONS       -----//
 //------------------------------------------//
-void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id)
+void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id, uint32_t delete_reason)
 {
     KalmanFilter *kf = track_array[track_id];
     if (kf->active) {

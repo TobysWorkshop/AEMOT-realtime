@@ -75,7 +75,7 @@ private:
     //------------------------------------------//
     //-----        PRIVATE FUNCTIONS       -----//
     //------------------------------------------//
-    void deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id);
+    void deleteTrack(std::vector<KalmanFilter *> &track_array, int track_id, uint32_t delete_reason);
 
     //logging
     void flushBacklog(int slot);
