@@ -32,8 +32,10 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
     }
     active_track_count_ = 0;
 
-    // one backlog slot per pool slot
+    // one backlog / counter / validation-snapshot slot per pool slot
     log_backlogs_.resize(pool_size);
+    log_counts_.assign(pool_size, 0u);
+    validation_snapshots_.resize(pool_size);
 };
 
 void TrackManager::update_default_dist_threshold(double dist_threshold)
@@ -66,6 +68,10 @@ void TrackManager::store_parameters(double ts_age, double dt_terminate, double l
 void TrackManager::setLogger(TrackLogger* logger)
 {
     logger_ = logger;
+}
+void TrackManager::setSummaryLogger(TrackSummaryLogger* summary_logger)
+{
+    summary_logger_ = summary_logger;
 }
 
 TrackManager::~TrackManager()
@@ -145,6 +151,8 @@ KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
 
             // logging: clear out any leftover backlog from whatever track used this slot last
             log_backlogs_[i].clear();
+            log_counts_[i] = 0;
+            validation_snapshots_[i].captured = false;
 
             //debug
             //std::cerr << "[new] slot=" << i
@@ -213,6 +221,13 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
             //                << " val=" << output_tracks[i]->validated
             //                << std::endl;
 
+            //for summary logging:
+            uint32_t reason = 0;
+            if (out_of_frame) reason |= TrackDeleteReason::OUT_OF_FRAME;
+            if (inactive)     reason |= TrackDeleteReason::INACTIVE;
+            if (bad_shape)    reason |= TrackDeleteReason::BAD_SHAPE;
+            if (low_activity) reason |= TrackDeleteReason::LOW_ACTIVITY;
+
             deleted_IDs.push_back(i);
             deleteTrack(output_tracks, i);
             continue;
@@ -230,6 +245,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
 
                 // Logging: track just got promoted - write out everything in its buffer and then log straight through from now on
                 flushBacklog(i);
+                captureValidationSnapshot(i, ts_now);
             }
         }
     }
@@ -377,6 +393,82 @@ void TrackManager::flushBacklog(int slot)
     backlog.clear();
 }
 
+// for track summary logging
+void TrackManager::captureValidationSnapshot(int slot, double ts_now)
+{
+    KalmanFilter* kf = output_tracks[slot];
+    auto& snap = validation_snapshots_[slot];
+
+    snap.captured = true;
+    snap.t_validated = ts_now;
+
+    Eigen::VectorXd x = kf->state().transpose();
+    Eigen::MatrixXd Pcov = kf->P_x();
+
+    for (int k = 0; k < kSummaryStateDim; ++k) {
+        snap.x_hat[k] = x(k);
+    }
+    for (int r = 0; r < kSummaryStateDim; ++r) {
+        for (int c = 0; c < kSummaryStateDim; ++c) {
+            snap.P[r * kSummaryStateDim + c] = Pcov(r, c);
+        }
+    }
+}
+
+void TrackManager::writeSummary(int slot, uint32_t delete_reason)
+{
+    if (!summary_logger_) return;
+
+    KalmanFilter* kf = output_tracks[slot];
+
+    TrackSummaryRecord rec{};
+    rec.track_id = static_cast<uint64_t>(kf->getID());
+    rec.t_created = kf->get_t0();
+    rec.t_deleted = kf->get_ts_last();
+    rec.num_records = log_counts_[slot];
+    rec.delete_reason = delete_reason;
+    rec.event_rate_at_deletion = (kf->dt_moving_avg > 0.0) ? (1.0 / kf->dt_moving_avg) : 0.0;
+
+    // End-of-life state/covariance, captured right now.
+    Eigen::VectorXd x_final = kf->state().transpose();
+    Eigen::MatrixXd P_final = kf->P_x();
+    for (int k = 0; k < kSummaryStateDim; ++k) {
+        rec.x_hat_at_deletion[k] = x_final(k);
+    }
+    for (int r = 0; r < kSummaryStateDim; ++r) {
+        for (int c = 0; c < kSummaryStateDim; ++c) {
+            rec.P_at_deletion[r * kSummaryStateDim + c] = P_final(r, c);
+        }
+    }
+
+    // Validation-time state/covariance, captured earlier and stashed.
+    const auto& snap = validation_snapshots_[slot];
+    if (snap.captured) {
+        rec.t_validated = snap.t_validated;
+        std::memcpy(rec.x_hat_at_validation, snap.x_hat, sizeof(rec.x_hat_at_validation));
+        std::memcpy(rec.P_at_validation, snap.P, sizeof(rec.P_at_validation));
+    } else {
+        // Shouldn't happen - writeSummary() is only ever called for
+        // validated tracks, and validation always captures a snapshot at
+        // the same moment (see evaluateTracks()) - but guard rather than
+        // writing uninitialised data if that invariant is ever broken.
+        rec.t_validated = rec.t_created;
+        std::memset(rec.x_hat_at_validation, 0, sizeof(rec.x_hat_at_validation));
+        std::memset(rec.P_at_validation, 0, sizeof(rec.P_at_validation));
+    }
+
+    summary_logger_->log(rec);
+}
+
+void TrackManager::flushAllSummaries()
+{
+    for (int i = 0; i < static_cast<int>(output_tracks.size()); ++i) {
+        if (output_tracks[i]->active && output_tracks[i]->validated) {
+            writeSummary(i, TrackDeleteReason::STILL_ACTIVE_AT_SHUTDOWN);
+        }
+    }
+}
+
 //------------------------------------------//
 //-----        PRIVATE FUNCTIONS       -----//
 //------------------------------------------//
@@ -384,10 +476,18 @@ void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int tra
 {
     KalmanFilter *kf = track_array[track_id];
     if (kf->active) {
+        
+        // if this was a real validated track, capture its summary for file writting
+        if (kf->validated) {
+            writeSummary(track_id, delete_reason);
+        }
+
         kf->active = false; // Mark the Kalman filter as inactive
         active_track_count_--;
 
         // logging: clear out this track's log
         log_backlogs_[track_id].clear();
+        log_counts_[track_id] = 0;
+        validation_snapshots_[track_id].captured = false;
     }
 }

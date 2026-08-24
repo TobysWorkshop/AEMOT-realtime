@@ -7,6 +7,7 @@
 #include "TrackManager.hpp" 
 #include "SAEdetector.hpp"  
 #include "track_logger.hpp"
+#include "track_summary_logger.hpp"
 
 // Other includes
 #include <cstdint>
@@ -53,6 +54,7 @@ namespace processing {
         std::unique_ptr<TrackManager> track_manager;
         std::unique_ptr<SAEdetector> detector;
         std::unique_ptr<TrackLogger> track_logger;
+        std::unique_ptr<TrackSummaryLogger> track_summary_logger;
 
         frame_queue* frame_output = nullptr;
 
@@ -329,7 +331,8 @@ namespace processing {
         std::string formatted = ss.str();
 
         try {
-            track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + "_kalman_log.bees"); // Binary Event Evolution Storage
+            track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + ".bees"); // Binary Event Evolution Storage
+            track_summary_logger = std::make_unique<TrackSummaryLogger>("./track_logs/" + formatted + ".beesum"); // Binary Event Evolution Summary
         } catch (const std::exception &ex) {
             std::cerr << "Error: " << ex.what() << std::endl;
             return false;
@@ -403,6 +406,7 @@ namespace processing {
             params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
         );
         track_manager->setLogger(track_logger.get());
+        track_manager->setSummaryLogger(track_summary_logger.get());
 
         return true;
     } // end setup()
@@ -657,9 +661,17 @@ namespace processing {
             writer.release();
         }
 
+        // write out any summaries for tracks that are still alive at teardown
+        if (track_manager) {
+            track_manager->flushAllSummaries();
+        }
+
         // flush any remaining logs from the logger's buffer onto the writer thread before shutdown!
         if (track_logger) {
             track_logger->close();
+        }
+        if (track_summary_logger) {
+            track_summary_logger->close();
         }
 
         std::cout << "processed " << total_events << " events total\n";
