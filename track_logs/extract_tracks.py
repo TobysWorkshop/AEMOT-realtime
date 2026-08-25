@@ -42,6 +42,7 @@ import os
 import struct
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import matplotlib as mpl
 from datetime import datetime, timedelta
 
 ## -------------
@@ -151,7 +152,7 @@ def plot_tracks(data, background_image=None, output_path="temp.png", x_idx=0, y_
         track_groups = {tid: tid for tid in track_ids}
     group_ids = sorted(set(track_groups.get(tid, tid) for tid in track_ids), key=str)
     group_color_idx = {gid: i for i, gid in enumerate(group_ids)}
-    colors = cm.get_cmap("tab20", len(group_ids))
+    colors = mpl.colormaps["tab20"].resampled(len(group_ids))
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
@@ -168,7 +169,7 @@ def plot_tracks(data, background_image=None, output_path="temp.png", x_idx=0, y_
         ys = data["x_hat"][mask, y_idx]
         gid = track_groups.get(tid, tid)
         i = group_color_idx[gid]
-        color = colors(i % colors.N) if len(group_ids) <= 20 else cm.hsv(i / len(group_ids))
+        color = colors(i % 20) if len(group_ids) <= 20 else cm.hsv(i / len(group_ids))
 
         ax.plot(xs, ys, "-", linewidth=1, alpha=0.8, color=color)
         ax.plot(xs[0], ys[0], "o", markersize=4, color=color) # start marker
@@ -242,7 +243,7 @@ def main():
 
     print("[Info] .beesum track summaries loaded successfully:")
     print(f"Loaded {len(summary_data)} track summaries "
-    f"(state_dim={state_dim}) from {args.summary_path}")
+    f"(state_dim={state_dim}) from {summary_path}")
 
     print("")
     print("------------------------------------------")
@@ -255,19 +256,12 @@ def main():
         from merge_tracklets import stitch_tracks
 
         print("[Info] Stitching requested, merging tracklets into groups...")
+
+        config_path = os.path.join(this_file_dir, '..', 'configs', args.config + ".yaml")
         
-        groups, track_to_group = stitch_tracks(summary_data, tracks, args.config)
+        groups, track_to_group = stitch_tracks(summary_data, tracks, config_path)
         print(f"[Info] Successfully stitched {len(summary_data)} tracks into {len(groups)} group(s)")
         track_groups = track_to_group
-
-    
-    track_ids = np.unique(tracks["track_id"])
-    for tid in track_ids:
-        mask = tracks["track_id"] == tid
-        n_records = mask.sum()
-        print(f"Track {tid}: {n_records} records")
-        # print(f"Track {tid}: {tracks['x_hat'][mask]}")
-    print(f"[end] Total tracks: {len(track_ids)}")
 
     print("")
     print("------------------------------------------")
