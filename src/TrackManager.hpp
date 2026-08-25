@@ -80,9 +80,8 @@ private:
     //logging
     void flushBacklog(int slot);
 
-    // Captures the state/covariance snapshot at the moment `slot` validates.
-    // This is what ends up in a summary record's *_at_validation fields.
-    void captureValidationSnapshot(int slot, double ts_now);
+    
+    void recordValidationTime(int slot, double ts_now);
 
     // Builds and writes one TrackSummaryRecord for `slot`, using its stored
     // validation snapshot plus its current (end-of-life) state/covariance.
@@ -135,15 +134,10 @@ private:
     std::vector<uint32_t> log_counts_;
 
     TrackSummaryLogger* summary_logger_ = nullptr;
-    struct ValidationSnapshot {
-        bool   captured = false;
-        double t_validated = 0.0;
-        double x_hat[kSummaryStateDim] = {0};
-        double P[kSummaryStateDim * kSummaryStateDim] = {0};
-    };
-    // One slot per pool slot, captured once at validation, consumed once at
-    // writeSummary() time, reset on slot reuse.
-    std::vector<ValidationSnapshot> validation_snapshots_;
+    
+    // One entry per pool slot: ts at which that slot's track validated,
+    // or -1 if not yet validated / not holding a validated track.
+    std::vector<double> t_validated_;
 };
 
 #endif

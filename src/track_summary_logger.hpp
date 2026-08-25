@@ -51,19 +51,16 @@ struct TrackSummaryRecord {
 
     double   event_rate_at_deletion; // 1.0 / dt_moving_avg at time of writing
 
-    double   x_hat_at_validation[kSummaryStateDim];
-    double   P_at_validation[kSummaryStateDim * kSummaryStateDim];  // row-major, symmetric
-
     double   x_hat_at_deletion[kSummaryStateDim];
     double   P_at_deletion[kSummaryStateDim * kSummaryStateDim];    // row-major, symmetric
 };
 // All groupings above land on 8-byte boundaries (the two uint32_t fields
 // are paired together), so this is naturally aligned with no compiler
-// padding - sizeof(TrackSummaryRecord) == 1200 on any common platform.
+// padding - sizeof(TrackSummaryRecord) == 624 on any common platform.
 
 struct TrackSummaryFileHeader {
     char     magic[8] = {'A', 'E', 'M', 'O', 'T', 'S', 'U', 'M'}; // "AEMOTSUM" - distinct from the per-event log's magic
-    uint32_t version = 1;
+    uint32_t version = 2; //v2: dropped x_hat_at_validation/P_at_validation
     uint32_t state_dim = kSummaryStateDim;
     uint32_t record_size = sizeof(TrackSummaryRecord);
     uint32_t reserved = 0;

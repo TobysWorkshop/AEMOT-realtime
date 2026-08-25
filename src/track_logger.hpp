@@ -20,23 +20,23 @@
 // design (buffering, writer thread) doesn't change, just the record size and
 // the memcpy length in log().
 //
-// No #pragma pack needed: track_id(8) + ts(8) + x_hat(8*10=80) are all
+// No #pragma pack needed: track_id(8) + ts(8) + x_hat(8*8=64) are all
 // naturally 8-byte aligned already, so the compiler won't insert padding -
-// sizeof(KalmanLogRecord) == 96 on any common platform.
+// sizeof(KalmanLogRecord) == 80 on any common platform.
 // ---------------------------------------------------------------------------
 struct KalmanLogRecord {
     uint64_t track_id;
     double   ts;
-    double   x_hat[10]; // must match KalmanFilter::N_STATE - see kalman.hpp
+    double   x_hat[8]; // now dropped to 8 to remove dead weight. Doesn't match kalmanFilter::N_state anymore
 
-    static constexpr int N_STATE = 10;
+    static constexpr int N_STATE = 8;
 };
 
 // Small self-describing header written once at the start of the file, so a
 // reader doesn't need to know the record layout out of band.
 struct KalmanLogFileHeader {
     char     magic[8] = {'A', 'E', 'M', 'O', 'T', 'L', 'O', 'G'};
-    uint32_t version = 1;
+    uint32_t version = 2; // v2: bumped x_hat width changed from 10 to 8
     uint32_t n_state = KalmanLogRecord::N_STATE;
     uint32_t record_size = sizeof(KalmanLogRecord);
     uint32_t reserved = 0;
