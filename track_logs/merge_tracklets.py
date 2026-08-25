@@ -60,10 +60,36 @@ class DynamicsConfig:
     def P0(self):
         return np.diag([self.var_x, self.var_y, self.var_vx, self.var_vy])
 
-    def Q(self, gap_seconds):
-        scale = max(gap_seconds, 0.0) / self.dt
-        return np.diag([self.q_x, self.q_y, self.q_vx, self.q_vy]) * scale
+def build_Q(gap_seconds, sigma_ax, sigma_ay):
+    """
+    Discrete White Noise Acceleration (DWNA) process noise for an
+    arbitrary elapsed time `gap_seconds`, one 2x2 [pos, vel] block per axis,
+    assembled into the 4x4 [x, y, vx, vy] layout:
+ 
+        Q_axis(dt) = sigma_a^2 * [[dt^3/3, dt^2/2],
+                                   [dt^2/2, dt    ]]
+ 
+    sigma_ax/sigma_ay are the per-axis standard deviation of unmodelled
+    acceleration, in pixels/s^2 - a genuine per-second physical rate, unlike
+    the online tracker's q_x/q_y/q_vx/q_vy (which are tuned per associated-
+    event update, not per real second).
+    """
+    def axis_block(sigma_a):
+        s2 = sigma_a ** 2
+        dt = gap_seconds
+        return np.array([
+            [s2 * dt**3 / 3.0, s2 * dt**2 / 2.0],
+            [s2 * dt**2 / 2.0, s2 * dt],
+        ])
 
+    Qx = axis_block(sigma_ax)
+    Qy = axis_block(sigma_ay)
+
+    Q = np.zeros((4, 4))
+    Q[np.ix_([0, 2], [0, 2])] = Qx
+    Q[np.ix_([1, 3], [1, 3])]= Qy
+
+    return Q
 
 def build_F(dt):
     """
@@ -118,7 +144,7 @@ def mahalanobis_sq(residual, S):
         solved = np.linalg.pinv(S) @ residual
     return float(residual @ solved)
 
-def build_cost_matrix(endpoints, config: DynamicsConfig, max_gap_seconds, confidence=0.99):
+def build_cost_matrix(endpoints, sigma_ax, sigma_ay, max_gap_seconds, max_pixel_jump, confidence=0.99):
     track_ids = sorted(endpoints.keys())
     n = len(track_ids)
     cost = np.full((n, n), np.inf)
@@ -136,9 +162,13 @@ def build_cost_matrix(endpoints, config: DynamicsConfig, max_gap_seconds, confid
 
             F = build_F(gap)
             x_pred = F @ a["x_end"]
-            P_pred = F @ a["P_end"] @ F.T + config.Q(gap)
+            P_pred = F @ a["P_end"] @ F.T + build_Q(gap, sigma_ax, sigma_ay)
 
             residual = b["x_start"] - x_pred
+            euclidean_jump = float(np.hypot(residual[0], residual[1]))
+            if euclidean_jump > max_pixel_jump:
+                continue # hard clamp here
+
             S = P_pred + b["P_start"]
             d2 = mahalanobis_sq(residual, S)
 
@@ -206,15 +236,50 @@ def chain_matches(track_ids, matches):
 
     return groups, track_to_group
 
+def diagnose_pair(endpoints, tid_a, tid_b, sigma_ax, sigma_ay, confidence=0.99):
+    """
+    Prints a breakdown of the gate for one specific (a_end -> b_start) pair.
+    Use this to sanity-check the sigma_ax/sigma_ay/max_pixel_jump against a track
+    pair that you know should or shouldn't stitch, rather than tuning blind against
+    the aggregate group count.
+    """
+    a, b = endpoints[tid_a], endpoints[tid_b]
+    gap = b["t_start"] - a["t_end"]
+    print(f"track {tid_a} end (t={a['t_end']:.4f}) -> track {tid_b} start (t={b['t_start']:.4f})")
+    print(f"  gap = {gap:.4f}s")
+    if gap <= 0:
+        print("  REJECTED: b does not start after a ends")
+        return
 
-def stitch_tracks(summary_data, event_data, config_path, max_gap_seconds=1.0, confidence=0.99):
+    F = build_F(gap)
+    x_pred = F @ a["x_end"]
+    Q = build_Q(gap, sigma_ax, sigma_ay)
+    P_pred = F @ a["P_end"] @ F.T + Q
+
+    residual = b["x_start"] - x_pred
+    euclidean_jump = float(np.hypot(residual[0], residual[1]))
+    S = P_pred + b["P_start"]
+    d2 = mahalanobis_sq(residual, S)
+    threshold = chi2.ppf(confidence, df=STATE_DIM)
+ 
+    print(f"  predicted b start (from a):     {x_pred[:2]}")
+    print(f"  actual b start:                 {b['x_start'][:2]}")
+    print(f"  euclidean position jump:        {euclidean_jump:.1f}px")
+    print(f"  P_pred diag (x,y,vx,vy):        {np.diag(P_pred)}")
+    print(f"  S diag (x,y,vx,vy):             {np.diag(S)}")
+    print(f"  squared Mahalanobis distance:   {d2:.2f}  (chi2 threshold @ {confidence}: {threshold:.2f})")
+    print(f"  would pass chi2 gate:           {d2 <= threshold}")
+
+
+def stitch_tracks(summary_data, event_data, config_path, sigma_ax, sigma_ay,
+                  max_gap_seconds=1.0, max_pixel_jump=100.0, confidence=0.99):
     """
     Full stitching pipeline. 
     """
 
     config = DynamicsConfig.from_yaml(config_path)
     endpoints = extract_track_endpoints(summary_data, event_data, config)
-    track_ids, cost = build_cost_matrix(endpoints, config, max_gap_seconds, confidence)
+    track_ids, cost = build_cost_matrix(endpoints, sigma_ax, sigma_ay, max_gap_seconds, max_pixel_jump, confidence)
     matches = solve_assignment(track_ids, cost)
     groups, track_to_group = chain_matches(track_ids, matches)
 
@@ -226,7 +291,15 @@ if __name__ == "__main__":
     parser.add_argument("log_path", help="path to the .bees per-event log")
     parser.add_argument("summary_path", help="path to the .beesum track summary log")
     parser.add_argument("config_name", help="name of the tracker's YAML config in the config/ folder (without .yaml !)")
+
+    parser.add_argument("--sigma_a", type=float, default=0.0,
+                        help="per-axis acceleration noise std dev, px/s^2 - "
+                            "see stitch_tracks()'s docstring. Defaults to 0 "
+                            "(tightest gate, pure constant-velocity) - raise "
+                            "this deliberately, don't trust the default.")
+
     parser.add_argument("--max_gap_seconds", type=float, default=1.0)
+    parser.add_argument("--max_pixel_jump", type=float, default=100.0)
     parser.add_argument("--confidence", type=float, default=0.99)
     args = parser.parse_args()
 
@@ -239,7 +312,10 @@ if __name__ == "__main__":
 
     groups, track_to_group = stitch_tracks(
         summary_data, event_data, config_path,
-        max_gap_seconds=args.max_gap_seconds, confidence=args.confidence,
+        sigma_ax=args.sigma_a, sigma_ay=args.sigma_a,
+        max_gap_seconds=args.max_gap_seconds, 
+        max_pixel_jump=args.max_pixel_jump,
+        confidence=args.confidence,
     )
 
     multi = [g for g in groups if len(g) > 1]

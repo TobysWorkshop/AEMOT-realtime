@@ -201,6 +201,12 @@ def main():
                             "stitch_tracks.stitch_tracks() and recolour the plot by "
                             "stitched group instead of raw track_id")
 
+    parser.add_argument("--sigma_a", type=float, default=0.0,
+                         help="passed through to stitch_tracks() - see its docstring")
+    parser.add_argument("--max_gap_seconds", type=float, default=1.0)
+    parser.add_argument("--max_pixel_jump", type=float, default=100.0)
+    parser.add_argument("--confidence", type=float, default=0.99)
+
     args = parser.parse_args()
 
     this_file_dir = os.path.dirname(os.path.abspath(__file__))
@@ -259,7 +265,13 @@ def main():
 
         config_path = os.path.join(this_file_dir, '..', 'configs', args.config + ".yaml")
         
-        groups, track_to_group = stitch_tracks(summary_data, tracks, config_path)
+        groups, track_to_group = stitch_tracks(
+            summary_data, tracks, config_path,
+            sigma_ax=args.sigma_a, sigma_ay=args.sigma_a,
+            max_gap_seconds=args.max_gap_seconds,
+            max_pixel_jump=args.max_pixel_jump,
+            confidence=args.confidence,
+        )
         print(f"[Info] Successfully stitched {len(summary_data)} tracks into {len(groups)} group(s)")
         track_groups = track_to_group
 
