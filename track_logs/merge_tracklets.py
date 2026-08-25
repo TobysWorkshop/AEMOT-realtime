@@ -140,6 +140,128 @@ def extract_track_endpoints(summary_data, event_data, config: DynamicsConfig):
 def return_config(config_path):
     return DynamicsConfig.from_yaml(config_path)
 
+
+def compute_track_kinematics(event_data, resample_dt=0.01):
+    """Returns (speeds, accels, dts) pooled across every track in
+    event_data: speeds = instantaneous px/s at every raw record (from the
+    Kalman filter's own vx,vy state - x_hat indices 2,3, no resampling
+    needed here), accels = px/s^2 computed between RESAMPLED points spaced
+    >= resample_dt apart (see below for why), dts = the resampled dt values
+    actually used (returned for diagnostics).
+ 
+    Why resampling, not just filtering out the smallest gaps: on this data
+    the online filter updates every associated event - median inter-record
+    dt came back at ~35 MICROSECONDS. Differentiating velocity between two
+    updates that close together means dividing by a near-zero denominator,
+    so even ordinary state-estimation jitter (a fraction of a px/s of
+    noise, completely normal for a Kalman filter) turns into an apparent
+    acceleration of hundreds of thousands of px/s^2 - that's differentiation
+    noise, not real bee kinematics. A real bee's flight maneuvers happen on
+    the order of tens of milliseconds, not tens of microseconds, so
+    resample_dt=0.01 (10ms) targets a timescale where genuine direction/
+    speed changes actually happen, rather than one dominated by per-update
+    filter noise. This is a real trade-off - a coarser resample_dt smooths
+    out noise but can also blur together fast genuine maneuvers, so treat
+    this as an estimate, and sanity-check the result against diagnose_pair()
+    on tracks you can see turning sharply in the plot.
+    """
+    speeds, accels, used_dts = [], [], []
+    for tid in np.unique(event_data["track_id"]):
+        rows = event_data[event_data["track_id"] == tid]
+        rows = rows[np.argsort(rows["ts"])]
+        vx_all, vy_all = rows["x_hat"][:, 2], rows["x_hat"][:, 3]
+        speeds.append(np.hypot(vx_all, vy_all))
+ 
+        # Greedy stride-sample: walk forward, keeping a point only once at
+        # least resample_dt has elapsed since the last kept point.
+        ts = rows["ts"]
+        keep_idx = [0]
+        last_ts = ts[0]
+        for i in range(1, len(ts)):
+            if ts[i] - last_ts >= resample_dt:
+                keep_idx.append(i)
+                last_ts = ts[i]
+        if len(keep_idx) < 2:
+            continue
+ 
+        keep_idx = np.array(keep_idx)
+        vx, vy, kts = vx_all[keep_idx], vy_all[keep_idx], ts[keep_idx]
+        dt = np.diff(kts)
+        dvx, dvy = np.diff(vx), np.diff(vy)
+        accels.append(np.hypot(dvx, dvy) / dt)
+        used_dts.append(dt)
+ 
+    speeds = np.concatenate(speeds) if speeds else np.array([])
+    accels = np.concatenate(accels) if accels else np.array([])
+    used_dts = np.concatenate(used_dts) if used_dts else np.array([])
+    return speeds, accels, used_dts
+ 
+ 
+def suggest_stitch_params(event_data, max_gap_seconds=1.0, resample_dt=0.01,
+                           speed_percentile=99, accel_percentile=95, safety_factor=1.5,
+                           frame_width=1280, frame_height=720):
+    """Prints observed speed/acceleration statistics from event_data and a
+    suggested starting (sigma_a, max_pixel_jump) pair. Treat the printed
+    suggestion as a starting point for diagnose_pair()-guided tuning, not a
+    final answer - percentiles/safety_factor/resample_dt are themselves
+    judgement calls.
+ 
+    resample_dt: see compute_track_kinematics()'s docstring - acceleration
+    is computed between points resampled to at least this far apart in
+    time, not between raw consecutive per-event records, because
+    differentiating at the raw per-event rate is typically dominated by
+    Kalman-filter estimation noise rather than real motion.
+ 
+    frame_width/frame_height: max_pixel_jump is clipped to the frame
+    diagonal - a jump larger than that is impossible within a single frame
+    and would make the hard-clamp backstop inert (never actually reject
+    anything). Pass None to disable clipping.
+    """
+    speeds, accels, dts = compute_track_kinematics(event_data, resample_dt=resample_dt)
+    if len(speeds) == 0:
+        print("No records found - can't compute kinematics.")
+        return None
+ 
+    speed_p = np.percentile(speeds, speed_percentile)
+    accel_p = np.percentile(accels, accel_percentile) if len(accels) else 0.0
+ 
+    suggested_jump = speed_p * max_gap_seconds * safety_factor
+    suggested_sigma_a = accel_p
+ 
+    print(f"Resampled dt used for accel (target >= {resample_dt}s): "
+          f"median={np.median(dts):.4f}, min={dts.min():.4f}" if len(dts) else
+          "No resampled dt pairs found - tracks may all be shorter than resample_dt.")
+    print(f"Speed (px/s, raw per-event): median={np.median(speeds):.1f}, "
+          f"p{speed_percentile}={speed_p:.1f}, max={speeds.max():.1f}")
+    if len(accels):
+        print(f"Accel (px/s^2, resampled): median={np.median(accels):.1f}, "
+              f"p{accel_percentile}={accel_p:.1f}, max={accels.max():.1f}")
+    else:
+        print("Accel: no resampled pairs found (tracks too short relative to resample_dt?)")
+ 
+    if frame_width is not None and frame_height is not None:
+        diagonal = float(np.hypot(frame_width, frame_height))
+        if suggested_jump > diagonal:
+            print(f"\nNOTE: raw suggestion ({suggested_jump:.1f}px) exceeds the "
+                  f"{frame_width}x{frame_height} frame diagonal ({diagonal:.1f}px) - "
+                  f"clipping to the diagonal, since a jump that large is impossible "
+                  f"within a single frame and would make max_pixel_jump a no-op.")
+            suggested_jump = diagonal
+ 
+    print(f"\nSuggested starting point for max_gap_seconds={max_gap_seconds}:")
+    print(f"  --sigma_a {suggested_sigma_a:.1f}")
+    print(f"  --max_pixel_jump {suggested_jump:.1f}")
+    print(f"(both include a {safety_factor}x safety margin over the "
+          f"{speed_percentile}th/{accel_percentile}th percentile observed - "
+          f"tighten or loosen from here using diagnose_pair() on real pairs)")
+ 
+    return suggested_sigma_a, suggested_jump
+
+
+
+
+
+
 def mahalanobis_sq(residual, S):
     try:
         solved = np.linalg.solve(S, residual)
@@ -291,8 +413,8 @@ def stitch_tracks(summary_data, event_data, config_path, sigma_ax, sigma_ay,
 ## entry point
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("log_path", help="path to the .bees per-event log")
-    parser.add_argument("summary_path", help="path to the .beesum track summary log")
+    parser.add_argument("log", help="path to the .bees per-event log")
+    #parser.add_argument("summary_path", help="path to the .beesum track summary log")
     parser.add_argument("config_name", help="name of the tracker's YAML config in the config/ folder (without .yaml !)")
 
     parser.add_argument("--sigma_a", type=float, default=0.0,
@@ -304,10 +426,34 @@ if __name__ == "__main__":
     parser.add_argument("--max_gap_seconds", type=float, default=1.0)
     parser.add_argument("--max_pixel_jump", type=float, default=100.0)
     parser.add_argument("--confidence", type=float, default=0.99)
+
+    parser.add_argument("--suggest", action="store_true",
+                         help="print empirically-derived starting sigma_a/max_pixel_jump "
+                              "from the event log's own velocity data, then exit "
+                              "without stitching")
+    parser.add_argument("--frame_width", type=int, default=1280)
+    parser.add_argument("--frame_height", type=int, default=720)
+    parser.add_argument("--resample_dt", type=float, default=0.01,
+                         help="timescale (s) acceleration is estimated over for --suggest "
+                              "- see compute_track_kinematics()'s docstring")
+
+
     args = parser.parse_args()
 
-    event_data = read_log(args.log_path)
-    summary_data, _ = read_summary_log(args.summary_path)
+    this_file_dir = os.path.dirname(os.path.abspath(__file__))
+    log_path = os.path.join(this_file_dir, args.log + ".bees")
+
+    summary_path = os.path.join(this_file_dir, args.log + ".beesum")
+
+    event_data = read_log(log_path)
+    if args.suggest:
+        suggest_stitch_params(event_data, max_gap_seconds=args.max_gap_seconds,
+                               resample_dt=args.resample_dt,
+                               frame_width=args.frame_width, frame_height=args.frame_height)
+
+        raise SystemExit(0)
+
+    summary_data, _ = read_summary_log(summary_path)
 
     this_file_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(this_file_dir, '..', 'configs', args.config_name + ".yaml")
