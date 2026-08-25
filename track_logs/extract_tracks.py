@@ -283,5 +283,14 @@ def main():
 
     plot_tracks(tracks, background_image=args.background, output_path=output_path, track_groups=track_groups)
 
+    ##debug diagnose tracks
+    print("[Info] Diagnosing track pair 1768 and 1668...")
+    from merge_tracklets import diagnose_pair, extract_track_endpoints, return_config
+    config = return_config(config_path)
+    endpoints = extract_track_endpoints(summary_data, tracks, config)
+    diagnose_pair(endpoints, 1668, 1768, args.sigma_a, args.sigma_a, args.confidence)
+
+
+    
 if __name__ == "__main__":
     main()

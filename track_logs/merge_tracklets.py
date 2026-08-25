@@ -137,6 +137,9 @@ def extract_track_endpoints(summary_data, event_data, config: DynamicsConfig):
         }
     return endpoints
 
+def return_config(config_path):
+    return DynamicsConfig.from_yaml(config_path)
+
 def mahalanobis_sq(residual, S):
     try:
         solved = np.linalg.solve(S, residual)
