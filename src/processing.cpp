@@ -9,6 +9,8 @@
 #include "track_logger.hpp"
 #include "track_summary_logger.hpp"
 
+#include "profiler.hpp"
+
 // Other includes
 #include <cstdint>
 #include <iostream>
@@ -498,12 +500,14 @@ namespace processing {
             }
             
             // update the reconstructed-image pixel this event touched
+            AEMOT_TIMED_SCOPE("high_pass");
             high_pass(ts, c, r, p, params.alpha);
 
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
             //Find which existing track's predicted position is closest to this event's location
+            AEMOT_TIMED_SCOPE("nearest_neighbour_search");
             double dist_min_sq = 1e18; // a very large starting squared distance (distance = 1e6)
             const int n_tracks = track_manager->len();
 
@@ -530,6 +534,7 @@ namespace processing {
             // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
             if (dist_min_sq < dist_threshold_sq)
             {
+                AEMOT_TIMED_SCOPE("kalman_update_and_log");
                 //debug
                 AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
 
@@ -546,6 +551,7 @@ namespace processing {
             
             if (!f_event_associated) // if the event hasn't been associated yet
             {   
+                AEMOT_TIMED_SCOPE("detection");
                 if (use_dt_detector) { // dt_detector route
 
                     // add event to detector's stash
@@ -603,6 +609,7 @@ namespace processing {
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
             // How we do this (one of three ways) is based on the config and how many events have passed:
+            AEMOT_TIMED_SCOPE("track_evaluation");
             deleted_IDs_scratch.clear();
 
             double_track_evaluation_counter++;
@@ -649,6 +656,7 @@ namespace processing {
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
             if (params.publish_framerate > 0 && ts > t_next_publish) {
+                AEMOT_TIMED_SCOPE("publish_frame");
                 //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
                 publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
                 t_next_publish = ts + (1.0 / params.publish_framerate);
@@ -674,6 +682,7 @@ namespace processing {
             track_summary_logger->close();
         }
 
+        Profiler::instance().report();
         std::cout << "processed " << total_events << " events total\n";
     }
 
