@@ -85,7 +85,7 @@ void KalmanFilter::init()
   accum_sum_y = 0.0;
   accum_polarity_sum = 0;
   accum_count = 0;
-  last_seen_ts = ts;
+  last_seen_ts = t0;
 }
 
 

@@ -11,6 +11,13 @@
 #include "track_logger.hpp"
 #include "track_summary_logger.hpp"
 
+class KalmanFilter;
+
+struct NewTrackResult {
+        KalmanFilter* track = nullptr;
+        int slot = -1;
+    };
+
 class TrackManager
 {
 
@@ -24,11 +31,6 @@ public:
                  Eigen::MatrixXd P, Eigen::MatrixXd A,
                  Eigen::MatrixXd x0, int ring_buffer_len, int n_state, 
                  int pool_size);
-    
-    struct NewTrackResult {
-        KalmanFilter* track = nullptr;
-        int slot = -1;
-    };
 
     // Add track to output
     NewTrackResult createNewTrack(Eigen::Vector<double,3> new_point);

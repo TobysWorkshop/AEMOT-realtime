@@ -584,7 +584,7 @@ namespace processing {
                     trk->update(flush_e, 0, flush_p);
 
                     // log the post-update state, buffered until validated
-                    track_manager->logTrackUpdate(id, ts, associated_trk->state_data());
+                    track_manager->logTrackUpdate(id, ts, trk->state_data());
                 }
             }
             
