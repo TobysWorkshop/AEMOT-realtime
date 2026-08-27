@@ -62,6 +62,7 @@ private:
     bool m_f_patch_status = false;
     bool m_f_regression_status = false;
 
+    Eigen::Vector2d smallestEigenvector2x2(const Eigen::Matrix2d& M) const;
 
     int m_width, m_height;
     Eigen::MatrixXd initialised_events;
@@ -70,6 +71,8 @@ private:
     Eigen::MatrixXd initialised_directions, init_directions_patch;
     Eigen::MatrixXd lx, ly;
     Eigen::MatrixXd lx_patch, ly_patch;
+
+    Eigen::MatrixXd weight_patch; // cached exp(-2*alpha*(t_current - t_patch)), computed once per event in getPatches()
     
     // Set up some patches that we will need each iteration
     // Eigen::VectorXd b;

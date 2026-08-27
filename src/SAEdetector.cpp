@@ -48,6 +48,9 @@ SAEdetector::SAEdetector(int height, int width, int ksize, double alpha, double 
     t_patch.resize(m_ksize, m_ksize);
     t_patch.setZero();
 
+    weight_patch.resize(m_ksize, m_ksize);
+    weight_patch.setZero();
+
     // scratch buffers for optimisation
     const int max_patch_points = m_ksize * m_ksize;
     A_scratch.resize(max_patch_points, 2);
@@ -84,7 +87,6 @@ void SAEdetector::addEvent(Eigen::Vector4d e){
 
 
 int SAEdetector::performDetection(Eigen::Vector4d e){
-    addEvent(e);
     getPatches(e);
     computeDirectionRegression(e);
     int detection_result = compareDirectionRegression(e);
@@ -93,24 +95,25 @@ int SAEdetector::performDetection(Eigen::Vector4d e){
 }
 
 int SAEdetector::performDetection_dt(Eigen::Vector4d e){
-    // Get the SAE patch indexes
-    Eigen::VectorXd x_indexes = Eigen::VectorXd::Constant(m_ksize, e(0)) + patch_offset;
-    Eigen::VectorXd y_indexes = Eigen::VectorXd::Constant(m_ksize, e(1)) + patch_offset;
+    // Get the SAE patch corner indexes
+    const double x0 = e(0) + patch_offset(0);
+    const double x1 = e(0) + patch_offset(m_ksize - 1);
+    const double y0 = e(1) + patch_offset(0);
+    const double y1 = e(1) + patch_offset(m_ksize - 1);
 
     // Set the patch flag to false if the requested indexes are out of the frame
-    if (x_indexes[0] < 0 | x_indexes[x_indexes.size()-1] >= m_width |
-        y_indexes[0] < 0 | y_indexes[y_indexes.size()-1] >= m_height){
+    if (x0 < 0 || x1 >= m_width || y0 < 0 || y1 >= m_height){
         return -1;
     } 
 
     // First, make sure enough events in the patch have had events
-    init_events_patch = initialised_events.block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
+    init_events_patch = initialised_events.block(y0, x0, m_ksize, m_ksize);
     if (init_events_patch.sum() < m_min_contributions){
         return -1;
     }   
 
     // Get the SAE patch
-    t_patch = SAE->getImage().block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
+    t_patch = SAE->getImage().block(y0, x0, m_ksize, m_ksize);
 
     if ((e(2) - t_patch.array()).maxCoeff() < m_dt_detection_threshold){
         return 1;
@@ -120,7 +123,7 @@ int SAEdetector::performDetection_dt(Eigen::Vector4d e){
     }
 }
 
-Eigen::MatrixXd SAEdetector::getImage(){
+Eigen::MatrixXd SAEdetector::getImage() const {
     return SAE->getImage();
 }
 
@@ -131,29 +134,32 @@ Eigen::MatrixXd SAEdetector::getImage(){
 // Get the patches used for least squares regression
 void SAEdetector::getPatches(Eigen::Vector4d e){
     
-    // Create index values
-    Eigen::VectorXd x_indexes = Eigen::VectorXd::Constant(m_ksize, e(0)) + patch_offset;
-    Eigen::VectorXd y_indexes = Eigen::VectorXd::Constant(m_ksize, e(1)) + patch_offset;
+    // Create corner indexes
+    const double x0 = e(0) + patch_offset(0);
+    const double x1 = e(0) + patch_offset(m_ksize - 1);
+    const double y0 = e(1) + patch_offset(0);
+    const double y1 = e(1) + patch_offset(m_ksize - 1);
 
     // Set the patch flag to false if the requested indexes are out of the frame
-    if (x_indexes[0] < 0 | x_indexes[x_indexes.size()-1] >= m_width |
-        y_indexes[0] < 0 | y_indexes[y_indexes.size()-1] >= m_height){
+    if (x0 < 0 || x1 >= m_width || y0 < 0 || y1 >= m_height){
         m_f_patch_status = false;
         return;
     }
 
     // First get the initialised pixel patch to see if we should get the  others
-    init_events_patch = initialised_events.block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
+    init_events_patch = initialised_events.block(y0, x0, m_ksize, m_ksize);
     
     if (init_events_patch.sum() < m_min_contributions){
         m_f_patch_status = false;
         return;
     }    
 
-    t_patch = SAE->getImage().block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
-    init_directions_patch = initialised_directions.block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
-    lx_patch = lx.block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
-    ly_patch = ly.block(y_indexes[0], x_indexes[0], m_ksize, m_ksize);
+    t_patch = SAE->getImage().block(y0, x0, m_ksize, m_ksize);
+    init_directions_patch = initialised_directions.block(y0, x0, m_ksize, m_ksize);
+    lx_patch = lx.block(y0, x0, m_ksize, m_ksize);
+    ly_patch = ly.block(y0, x0, m_ksize, m_ksize);
+
+    weight_patch = (-2.0 * m_alpha * (m_t_current - t_patch.array())).exp().matrix();
 
     m_f_patch_status = true;
 }
@@ -187,8 +193,7 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
         A(idx,1) = patch_offset(y);
 
         // Compute dt term
-        double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_diag(idx) = 1.0 /exp_term;
+        W_diag(idx) = weight_patch(y, x);
 
         idx++;
     }
@@ -196,8 +201,7 @@ void SAEdetector::computeDirectionRegression(Eigen::Vector4d e){
     Eigen::Matrix2d res = A.transpose() * W_diag.asDiagonal() * A;
 
     // Compute eigenvector of smallest eigenvalue for l_perp, rotate 90deg 
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigen_solver(res); 
-    Eigen::Vector2d l_perp =  eigen_solver.eigenvectors().col(0);
+    Eigen::Vector2d l_perp = smallestEigenvector2x2(res);
     Eigen::Vector2d l = {-l_perp(1), l_perp(0)};
 
     //----- Store values -----//
@@ -243,8 +247,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
         A(idx,1) = ly_patch(y,x);
 
         // Compute dt term
-        double exp_term = std::exp(2 * m_alpha * (m_t_current - t_patch(y, x)));
-        W_diag(idx) = 1.0 /exp_term;
+        W_diag(idx) = weight_patch(y, x);
 
         idx++;
     }
@@ -252,8 +255,7 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
     Eigen::Matrix2d res = A.transpose() * W_diag.asDiagonal() * A;
 
     // Compute eigenvector of smallest eigenvalue for l_perp, rotate 90deg 
-    Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigen_solver(res); 
-    Eigen::Vector2d l_perp =  eigen_solver.eigenvectors().col(0);
+    Eigen::Vector2d l_perp = smallestEigenvector2x2(res);
     Eigen::Vector2d l_est = {-l_perp(1), l_perp(0)};
 
     Eigen::Vector2d l_event = {lx_patch(int(m_ksize/2), int(m_ksize/2)), ly_patch(int(m_ksize/2), int(m_ksize/2))};
@@ -267,4 +269,24 @@ int SAEdetector::compareDirectionRegression(Eigen::Vector4d e){
     else {
         return -1;
     }
+}
+
+Eigen::Vector2d SAEdetector::smallestEigenvector2x2(const Eigen::Matrix2d& M) const {
+    const double a = M(0, 0), b = M(0, 1), d = M(1, 1);
+    const double mean = 0.5 * (a + d);
+    const double diff = 0.5 * (a - d);
+    const double disc = std::sqrt(diff * diff + b * b);
+    const double lambda_min = mean - disc;
+
+    Eigen::Vector2d v;
+    if (std::abs(b) > 1e-12) {
+        // (a - lambda)x + b*y = 0  =>  (x, y) = (b, lambda - a) satisfies this exactly
+        v = Eigen::Vector2d(b, lambda_min - a);
+    } else {
+        // M is already diagonal - eigenvectors are the standard basis vectors
+        v = (a <= d) ? Eigen::Vector2d(1.0, 0.0) : Eigen::Vector2d(0.0, 1.0);
+    }
+
+    const double norm = v.norm();
+    return (norm > 1e-12) ? (v / norm) : Eigen::Vector2d(0.0, 0.0);
 }

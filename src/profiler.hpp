@@ -76,4 +76,6 @@ private:
     std::chrono::steady_clock::time_point start_;
 };
 
-#define AEMOT_TIMED_SCOPE(name) ScopedTimer _aemot_timer_##__LINE__(name)
+#define AEMOT_CONCAT_(a, b) a##b
+#define AEMOT_CONCAT(a, b) AEMOT_CONCAT_(a, b)
+#define AEMOT_TIMED_SCOPE(name) ScopedTimer AEMOT_CONCAT(_aemot_timer_, __COUNTER__)(name)

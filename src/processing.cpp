@@ -575,32 +575,27 @@ namespace processing {
 
                     //debug
                     //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
-
-                    // perform the SAE detection on this event
-                    detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
+                    
+                    // add this event to the SAE
+                    detector->addEvent({(double)c, (double)r, ts, (double)p});
                     detection_event_count++;
 
                     // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
-                    if ((detector_output == 1) & (track_manager->hasAvailableSlot()) &
+                    if ((track_manager->hasAvailableSlot()) &
                         (dist_min_sq > detector_dist_threshold_sq || track_manager->activeCount() == 0) &
                         (detection_event_count > params.SAE_operation_rate)) 
                     {
                         
                         detection_event_count = 0;
-        
-                        track_manager->createNewTrack({(double)c, (double)r, ts});
-                        
-                        AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                        //perform the SAE detection on this event
+                        detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
+
+                        if (detector_output == 1){
+                            track_manager->createNewTrack({(double)c, (double)r, ts});
+                            AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
                                 << " active=" << track_manager->activeCount() << "\n");
-                    } else {
-                        if (detector_output == 1) {
-                            AEMOT_LOG_INFO("[SAE] SAE returned 1, but conditions for new track not met."
-                                << " available slots = " << track_manager->hasAvailableSlot()
-                                << ". far enough from existing tracks = " << (dist_min_sq > detector_dist_threshold_sq)
-                                << ". SAE_operational_rate met yet = " << (detection_event_count > params.SAE_operation_rate) << ".\n");
-                        } else {
-                            AEMOT_LOG_INFO("[SAE] SAE returned " << detector_output << ", not creating new track.\n");
                         }
+                        
                     }
                 }
 
