@@ -107,6 +107,8 @@ namespace processing {
         constexpr int MRU_SIZE = 3;
         int mru_slots[MRU_SIZE];
         int mru_len = 0;
+        uint64_t mru_hit_count = 0;
+        uint64_t mru_miss_count = 0;
 
         // moves 'slot' to the front of the MRU list, evicting the oldest entry
         inline void mru_touch(int slot) {
@@ -526,29 +528,34 @@ namespace processing {
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
             //Find which existing track's predicted position is closest to this event's location
-            AEMOT_TIMED_SCOPE("nearest_neighbour_MRU");
             double dist_min_sq = 1e18; // a very large starting squared distance (distance = 1e6)
             
             // FAST PATH: check the MRU list first, most-recent-first - more likely to find a match here, and then move on for speed
-            for (int k = 0; k < mru_len; k++) {
-                int slot = mru_slots[k];
-                KalmanFilter* trk = track_manager->getTrackUnchecked(slot);
-                if (!trk->active) continue;
-                const double dx = static_cast<double>(c) - trk->pos_x();
-                const double dy = static_cast<double>(r) - trk->pos_y();
-                const double d_sq = dx * dx + dy * dy;
-                if (d_sq < dist_threshold_sq) {
-                    id = slot;
-                    dist_min_sq = d_sq;
-                    f_event_associated = true;
-                    break;
+            {
+                AEMOT_TIMED_SCOPE("nearest_neighbour_MRU");
+
+                for (int k = 0; k < mru_len; k++) {
+                    int slot = mru_slots[k];
+                    KalmanFilter* trk = track_manager->getTrackUnchecked(slot);
+                    if (!trk->active) continue;
+                    const double dx = static_cast<double>(c) - trk->pos_x();
+                    const double dy = static_cast<double>(r) - trk->pos_y();
+                    const double d_sq = dx * dx + dy * dy;
+                    if (d_sq < dist_threshold_sq) {
+                        id = slot;
+                        dist_min_sq = d_sq;
+                        f_event_associated = true;
+                        mru_hit_count++;
+                        break;
+                    }
                 }
+                if (!f_event_associated) mru_miss_count++;
             }
 
-            AEMOT_TIMED_SCOPE("nearest_neighbour_fallback");
             // FALLBACK: full scan, only on an MRU miss
             if (!f_event_associated) {
-                double dist_min_sq = 1e18;
+                AEMOT_TIMED_SCOPE("nearest_neighbour_fallback");
+                dist_min_sq = 1e18;
                 const int n_tracks = track_manager->len();
                 // itterate through the track manager's current tracks to find the closest
                 for (int i = 0; i < n_tracks; i++)
@@ -620,9 +627,11 @@ namespace processing {
                     //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
                     
                     // add this event to the SAE
-                    AEMOT_TIMED_SCOPE("detection_addevent");
-                    detector->addEvent({(double)c, (double)r, ts, (double)p});
-                    detection_event_count++;
+                    {
+                        AEMOT_TIMED_SCOPE("detection_addevent");
+                        detector->addEvent({(double)c, (double)r, ts, (double)p});
+                        detection_event_count++;
+                    }
 
                     // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
                     if ((track_manager->hasAvailableSlot()) &
@@ -632,8 +641,10 @@ namespace processing {
                         
                         detection_event_count = 0;
                         //perform the SAE detection on this event
-                        AEMOT_TIMED_SCOPE("detection_performdetection");
-                        detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
+                        {
+                            AEMOT_TIMED_SCOPE("detection_performdetection");
+                            detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
+                        }
 
                         if (detector_output == 1){
                             AEMOT_TIMED_SCOPE("detection_createnewtrack");
@@ -652,49 +663,51 @@ namespace processing {
             // TRACK EVALUATION AND PRUNING //
             // Periodically ask the TrackManager to check whether any tracks should be deleted.
             // How we do this (one of three ways) is based on the config and how many events have passed:
-            AEMOT_TIMED_SCOPE("track_evaluation");
-            deleted_IDs_scratch.clear();
+            {
+                AEMOT_TIMED_SCOPE("track_evaluation");
+                deleted_IDs_scratch.clear();
 
-            double_track_evaluation_counter++;
-            full_evaluation_counter++;
+                double_track_evaluation_counter++;
+                full_evaluation_counter++;
 
-            // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
-            if ((track_manager->activeCount() > 1) & (params.f_evaluate == 1) & (double_track_evaluation_counter > 100))
-            {  
-                //debug
-                //std::cout << "[track eval] Checking duplicate tracks...\n";
+                // (a) Duplicate-track check: runs only every 100 events, and only if there's more than 1 track.
+                if ((track_manager->activeCount() > 1) & (params.f_evaluate == 1) & (double_track_evaluation_counter > 100))
+                {  
+                    //debug
+                    //std::cout << "[track eval] Checking duplicate tracks...\n";
 
-                double_track_evaluation_counter = 0;
-                auto ids = track_manager->evaluateDoubleTracks();
-                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
-            }
-            // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
-            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
-                //debug
-                //std::cout << "[track eval] Performing full eval...\n";
-
-                full_evaluation_counter = 0;
-                auto ids = track_manager->evaluateTracks(ts);
-                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());  
-            }
-            // (c) Fallback: only delete tracks that have left the frame (position-only check).
-            if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
-                //debug
-                //std::cout << "[track eval] Checking position (frame edge) only...\n";
-
-                auto ids = track_manager->evaluateTracksPosition();
-                deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
-            }
-
-            // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.
-            if (!deleted_IDs_scratch.empty()) {
-                while(!same_ts_e_buffer.empty()){
-                    same_ts_e_buffer.pop();
+                    double_track_evaluation_counter = 0;
+                    auto ids = track_manager->evaluateDoubleTracks();
+                    deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
                 }
-            }
+                // (b) Full evaluation (age/activity/etc.) - runs every 200 events.
+                if ((track_manager->activeCount() > 0) & (params.f_evaluate == 1) & (full_evaluation_counter > 200)){
+                    //debug
+                    //std::cout << "[track eval] Performing full eval...\n";
 
-            ts_kf_last = ts;
-            t_last = ts; // advance the previous timestep marker, ready for the next event to come in!
+                    full_evaluation_counter = 0;
+                    auto ids = track_manager->evaluateTracks(ts);
+                    deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());  
+                }
+                // (c) Fallback: only delete tracks that have left the frame (position-only check).
+                if ((track_manager->activeCount() > 0) & (params.f_evaluate == 0)){
+                    //debug
+                    //std::cout << "[track eval] Checking position (frame edge) only...\n";
+
+                    auto ids = track_manager->evaluateTracksPosition();
+                    deleted_IDs_scratch.insert(deleted_IDs_scratch.end(), ids.begin(), ids.end());
+                }
+
+                // If anything was deleted, the same-timestamp event buffer is now stale, so clear it.
+                if (!deleted_IDs_scratch.empty()) {
+                    while(!same_ts_e_buffer.empty()){
+                        same_ts_e_buffer.pop();
+                    }
+                }
+
+                ts_kf_last = ts;
+                t_last = ts; // advance the previous timestep marker, ready for the next event to come in!
+            }
 
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
@@ -726,6 +739,12 @@ namespace processing {
         }
 
         Profiler::instance().report();
+
+        if (mru_hit_count + mru_miss_count > 0) {
+            std::cout << "MRU hit rate: " << mru_hit_count << "/" << (mru_hit_count + mru_miss_count)
+                    << " (" << (100.0 * mru_hit_count / (mru_hit_count + mru_miss_count)) << "%)\n";
+        }
+
         std::cout << "processed " << total_events << " events total\n";
     }
 
