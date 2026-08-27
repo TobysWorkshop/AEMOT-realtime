@@ -500,24 +500,25 @@ namespace processing {
             }
             
             // update the reconstructed-image pixel this event touched
-            AEMOT_TIMED_SCOPE("high_pass");
-            high_pass(ts, c, r, p, params.alpha);
+            //AEMOT_TIMED_SCOPE("high_pass");
+            //high_pass(ts, c, r, p, params.alpha);
 
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
             //Find which existing track's predicted position is closest to this event's location
-            AEMOT_TIMED_SCOPE("nearest_neighbour_search");
+            AEMOT_TIMED_SCOPE("nearest_neighbour_start");
             double dist_min_sq = 1e18; // a very large starting squared distance (distance = 1e6)
             const int n_tracks = track_manager->len();
 
             // itterate through the track manager's current tracks to find the closest
             for (int i = 0; i < n_tracks; i++)
             {
+                AEMOT_TIMED_SCOPE("nearest_neighbour_gettrack");
                 KalmanFilter* trk = track_manager->getTrackUnchecked(i);
                 // if the track isn't active (just a waiting container), skip it
                 if (!trk->active) continue;
-
+                AEMOT_TIMED_SCOPE("nearest_neighbour_posxposy");
                 const double dx = static_cast<double>(c) - trk->pos_x();
                 const double dy = static_cast<double>(r) - trk->pos_y();
                 const double d_sq = dx * dx + dy * dy;
@@ -551,7 +552,7 @@ namespace processing {
             
             if (!f_event_associated) // if the event hasn't been associated yet
             {   
-                AEMOT_TIMED_SCOPE("detection");
+                //AEMOT_TIMED_SCOPE("detection");
                 if (use_dt_detector) { // dt_detector route
 
                     // add event to detector's stash
@@ -577,6 +578,7 @@ namespace processing {
                     //std::cout << "Event NOT associated to existing track. Adding to detector.\n";
                     
                     // add this event to the SAE
+                    AEMOT_TIMED_SCOPE("detection_addevent");
                     detector->addEvent({(double)c, (double)r, ts, (double)p});
                     detection_event_count++;
 
@@ -588,9 +590,11 @@ namespace processing {
                         
                         detection_event_count = 0;
                         //perform the SAE detection on this event
+                        AEMOT_TIMED_SCOPE("detection_performdetection");
                         detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
 
                         if (detector_output == 1){
+                            AEMOT_TIMED_SCOPE("detection_createnewtrack");
                             track_manager->createNewTrack({(double)c, (double)r, ts});
                             AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
                                 << " active=" << track_manager->activeCount() << "\n");
@@ -650,12 +654,12 @@ namespace processing {
 
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
-            if (params.publish_framerate > 0 && ts > t_next_publish) {
-                AEMOT_TIMED_SCOPE("publish_frame");
-                //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
-                publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
-                t_next_publish = ts + (1.0 / params.publish_framerate);
-            }
+            //if (params.publish_framerate > 0 && ts > t_next_publish) {
+            //    AEMOT_TIMED_SCOPE("publish_frame");
+            //    //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
+            //    publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
+            //    t_next_publish = ts + (1.0 / params.publish_framerate);
+            //}
         }
     }
 

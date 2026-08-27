@@ -123,7 +123,7 @@ int SAEdetector::performDetection_dt(Eigen::Vector4d e){
     }
 }
 
-Eigen::MatrixXd SAEdetector::getImage() const {
+Eigen::MatrixXd SAEdetector::getImage() {
     return SAE->getImage();
 }
 
