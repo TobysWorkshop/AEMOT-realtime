@@ -8,3 +8,6 @@ build/
 
 *.raw
 *.es
+*.bees
+*.beesum
+*.png
