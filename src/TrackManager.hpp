@@ -24,9 +24,14 @@ public:
                  Eigen::MatrixXd P, Eigen::MatrixXd A,
                  Eigen::MatrixXd x0, int ring_buffer_len, int n_state, 
                  int pool_size);
+    
+    struct NewTrackResult {
+        KalmanFilter* track = nullptr;
+        int slot = -1;
+    };
 
     // Add track to output
-    KalmanFilter* createNewTrack(Eigen::Vector<double,3> new_point);
+    NewTrackResult createNewTrack(Eigen::Vector<double,3> new_point);
 
     // Evaluation
     std::vector<int> evaluateTracks(double ts);

@@ -126,7 +126,7 @@ std::vector<int> TrackManager::getValidTrackIds()
 //**********                        SPAWN CANDIDATES                        **********//
 //************************************************************************************//
 // Create new candidate tracker
-KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
+NewTrackResult TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
 {
     for (int i = 0; i < output_tracks.size(); ++i)
     {
@@ -169,12 +169,12 @@ KalmanFilter* TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             // Log this track's initial state - buffered until (if) it validates.
             logTrackUpdate(i, new_point(2), kf->state_data());
 
-            return kf; // stop after filling one inactive slot
+            return {kf, i}; // stop after filling one inactive slot
         }
     }
     
     std::cout << "Warning! Kalman lineup is exhausted - no free slot for an new track! Consider increasing pool_size.\n";
-    return nullptr; // returns a nullptr if no track was actively created
+    return {nullptr, -1}; // returns a nullptr if no track was actively created
 }
 
 bool TrackManager::hasAvailableSlot()
@@ -203,7 +203,7 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
         required_rate = std::max(required_rate, evaluate_low_activity_factor * event_rate_threshold); // ensure it doesn't go below the base threshold so we don't squash small blobs' hopes and dreams
 
         bool out_of_frame = (x(0) < 10 || x(0) > width-11 || x(1) < 10 || x(1) > height-11);
-        bool inactive     = (ts_now - kf->get_ts_last() > evaluate_dt_terminate);
+        bool inactive     = (ts_now - kf->get_last_seen_ts() > evaluate_dt_terminate);
         bool low_activity = (1.0 / kf->dt_moving_avg) < required_rate;
         bool bad_shape    = (x(4) <= 0 || x(5) <= 0);
 

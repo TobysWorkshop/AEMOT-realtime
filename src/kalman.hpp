@@ -134,6 +134,68 @@ public:
   //destructor
   ~KalmanFilter();
 
+  // --- Event accumulator for batching updates ---
+  // Collects raw event coordinates between explicit update() calls, so
+  // update() (and downstream logging) runs on a decimated timescale
+  // instead of once per associated event.
+  double accum_sum_x = 0.0;
+  double accum_sum_y = 0.0;
+  int accum_polarity_sum = 0;   // +1 per ON event, -1 per OFF - majority vote used at flush
+  int accum_count = 0;
+  double accum_latest_ts = 0.0;         // ts of the most recent accumulated event
+  double accum_window_start_ts = 0.0;   // ts of the first event in the current window
+
+  // Lightweight "last seen" timestamp - updated on EVERY associated event
+  // immediately, independent of ts_last (which only advances when
+  // update() actually runs). evaluateTracks()'s inactivity check must use
+  // this instead of get_ts_last(), or a track sitting mid-accumulation-
+  // window would look "inactive" and get deleted even though it's seeing
+  // events right now.
+  double last_seen_ts = 0.0;
+  inline double get_last_seen_ts() const { return last_seen_ts; }
+
+  // Thresholds injected from outside (mirrors how dist_threshold is set
+  // via update_distance_threshold()) - keeps KalmanFilter decoupled from
+  // Parameters/YAML.
+  int accum_count_threshold = 8;      // tune against your real event rate
+  double accum_time_threshold  = 0.002;  // seconds; tune likewise
+  inline void update_accumulator_thresholds(int count_thresh, double time_thresh) {
+    accum_count_threshold = count_thresh;
+    accum_time_threshold = time_thresh;
+  }
+
+  // Adds one event into the accumulator. Returns true when the caller
+  // should flush (call update() with the accumulated centroid) - either
+  // the count threshold or the time threshold was hit, whichever first.
+  inline bool accumulate_event(double x, double y, double ts, int p) {
+    if (accum_count == 0) accum_window_start_ts = ts;
+    accum_sum_x += x;
+    accum_sum_y += y;
+    accum_polarity_sum += (p > 0) ? 1 : -1;
+    accum_count += 1;
+    accum_latest_ts = ts;
+    last_seen_ts = ts;
+
+    return (accum_count >= accum_count_threshold) || (ts - accum_window_start_ts >= accum_time_threshold);
+  }
+
+  // Centroid (mean x, mean y) at the window's latest ts, plus majority
+  // polarity - written into e_out/p_out ready to hand straight to
+  // update(). Call reset_accumulator() right after.
+  inline void get_accumulated_measurement(Eigen::Vector3d& e_out, int& p_out) const {
+      e_out << accum_sum_x / accum_count, accum_sum_y / accum_count, accum_latest_ts;
+      p_out = (accum_polarity_sum >= 0) ? 1 : 0;
+  }
+
+  inline void reset_accumulator() {
+      accum_sum_x = 0.0;
+      accum_sum_y = 0.0;
+      accum_polarity_sum = 0;
+      accum_count = 0;
+      // accum_window_start_ts / accum_latest_ts get reinitialized on the
+      // next accumulate_event() call (the accum_count==0 branch above)
+  }
+
 private:
   std::ofstream blob_measurements_txt_, states_txt_;
 

@@ -103,6 +103,25 @@ namespace processing {
         //detector type to use
         bool use_dt_detector = false;
 
+        // sticky/mru association cache for the most recently assigned tracks, for optimisation of nearest-neighbour association
+        constexpr int MRU_SIZE = 3;
+        int mru_slots[MRU_SIZE];
+        int mru_len = 0;
+
+        // moves 'slot' to the front of the MRU list, evicting the oldest entry
+        inline void mru_touch(int slot) {
+            int existing = -1;
+            for (int k = 0; k < mru_len; k++) {
+                if (mru_slots[k] == slot) { existing = k; break; }
+            }
+            int shift_from = (existing >= 0) ? existing : std::min(mru_len, MRU_SIZE - 1);
+            for (int k = shift_from; k > 0; k--) {
+                mru_slots[k] = mru_slots[k - 1];
+            }
+            mru_slots[0] = slot;
+            if (existing < 0 && mru_len < MRU_SIZE) mru_len++;
+        }
+
     } // end namespace for global variables
 
     namespace {
@@ -507,46 +526,68 @@ namespace processing {
 
             // NEAREST NEIGHBOUR DATA ASSOCIATION //
             //Find which existing track's predicted position is closest to this event's location
-            AEMOT_TIMED_SCOPE("nearest_neighbour_start");
+            AEMOT_TIMED_SCOPE("nearest_neighbour_MRU");
             double dist_min_sq = 1e18; // a very large starting squared distance (distance = 1e6)
-            const int n_tracks = track_manager->len();
-
-            // itterate through the track manager's current tracks to find the closest
-            for (int i = 0; i < n_tracks; i++)
-            {
-                AEMOT_TIMED_SCOPE("nearest_neighbour_gettrack");
-                KalmanFilter* trk = track_manager->getTrackUnchecked(i);
-                // if the track isn't active (just a waiting container), skip it
+            
+            // FAST PATH: check the MRU list first, most-recent-first - more likely to find a match here, and then move on for speed
+            for (int k = 0; k < mru_len; k++) {
+                int slot = mru_slots[k];
+                KalmanFilter* trk = track_manager->getTrackUnchecked(slot);
                 if (!trk->active) continue;
-                AEMOT_TIMED_SCOPE("nearest_neighbour_posxposy");
                 const double dx = static_cast<double>(c) - trk->pos_x();
                 const double dy = static_cast<double>(r) - trk->pos_y();
                 const double d_sq = dx * dx + dy * dy;
-                
-                if (d_sq < dist_min_sq)
-                {
+                if (d_sq < dist_threshold_sq) {
+                    id = slot;
                     dist_min_sq = d_sq;
-                    id = i; // remember the index of the closest track
+                    f_event_associated = true;
+                    break;
                 }
             }
 
-            // This is a simpler replacement to the original variable gating logic - should be faster.
-            // IF dist_min < threshold, then associate this event to that track and feed it into the Kalman filter update step
-            // If the event falls within the threshold, absorb it into this track and feed it into that track's Kalman filter update step
-            if (dist_min_sq < dist_threshold_sq)
-            {
-                AEMOT_TIMED_SCOPE("kalman_update_and_log");
-                //debug
-                AEMOT_LOG_INFO("Distance threshold met! Absorbing into existing track.\n");
+            AEMOT_TIMED_SCOPE("nearest_neighbour_fallback");
+            // FALLBACK: full scan, only on an MRU miss
+            if (!f_event_associated) {
+                double dist_min_sq = 1e18;
+                const int n_tracks = track_manager->len();
+                // itterate through the track manager's current tracks to find the closest
+                for (int i = 0; i < n_tracks; i++)
+                {
+                    KalmanFilter* trk = track_manager->getTrackUnchecked(i);
+                    // if the track isn't active (just a waiting container), skip it
+                    if (!trk->active) continue;
+                    const double dx = static_cast<double>(c) - trk->pos_x();
+                    const double dy = static_cast<double>(r) - trk->pos_y();
+                    const double d_sq = dx * dx + dy * dy;
+                    
+                    if (d_sq < dist_min_sq)
+                    {
+                        dist_min_sq = d_sq;
+                        id = i; // remember the index of the closest track
+                    }
+                }
+                f_event_associated = (dist_min_sq < dist_threshold_sq);
+            }
 
-                f_event_associated = true; // flag this event as associated! This will mean we skip allocating it as a new target
-                KalmanFilter* associated_trk = track_manager->getTrackUnchecked(id);
-                associated_trk->update(e, 0, p);
-                // log the post-update state, buffered until validated
-                track_manager->logTrackUpdate(id, ts, associated_trk->state_data());
+            // Kalman update and logging
+            if (f_event_associated) {
+                mru_touch(id); // remember this slot as most-recently-active
+
+                KalmanFilter* trk = track_manager->getTrackUnchecked(id);
+                const bool should_flush = trk->accumulate_event(c, r, ts, p);
+
+                if (should_flush) {
+                    Eigen::Vector3d flush_e;
+                    int flush_p;
+                    trk->get_accumulated_measurement(flush_e, flush_p);
+                    trk->reset_accumulator();
+                    trk->update(flush_e, 0, flush_p);
+
+                    // log the post-update state, buffered until validated
+                    track_manager->logTrackUpdate(id, ts, associated_trk->state_data());
+                }
             }
             
-
             int detector_output = -1;
             int detector_output_dt = -1;
             
@@ -569,7 +610,8 @@ namespace processing {
                     }
 
                     if (detector_output_dt == 1) {
-                        track_manager->createNewTrack({(double)c, (double)r, ts});
+                        NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                        mru_touch(new_trk.slot);
                     }
 
                 } else { // standard detector route
@@ -595,7 +637,9 @@ namespace processing {
 
                         if (detector_output == 1){
                             AEMOT_TIMED_SCOPE("detection_createnewtrack");
-                            track_manager->createNewTrack({(double)c, (double)r, ts});
+                            NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                            mru_touch(new_trk.slot);
+                            
                             AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
                                 << " active=" << track_manager->activeCount() << "\n");
                         }

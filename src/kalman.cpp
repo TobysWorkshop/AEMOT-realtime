@@ -79,6 +79,13 @@ void KalmanFilter::init()
   P = P0;
   t0 = 0;
   initialized = true;
+
+  //accumulator
+  accum_sum_x = 0.0;
+  accum_sum_y = 0.0;
+  accum_polarity_sum = 0;
+  accum_count = 0;
+  last_seen_ts = ts;
 }
 
 
@@ -114,6 +121,13 @@ void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
   dt_moving_avg = 1e-3; // reset moving average of dt
   validated = 0; // reset validation flag
   initialized = true;
+
+  // clear the accumulator for the reused slot
+  accum_sum_x = 0.0;
+  accum_sum_y = 0.0;
+  accum_polarity_sum = 0;
+  accum_count = 0;
+  last_seen_ts = ts;
 
   f_equivalent_measurement_init = 0; // reset equivalent measurement initialization flag
   equiv_measurement_count = 0; // reset equivalent measurement count
