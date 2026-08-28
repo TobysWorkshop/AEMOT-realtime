@@ -18,7 +18,7 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
                            Eigen::MatrixXd Q, Eigen::MatrixXd R,
                            Eigen::MatrixXd P, Eigen::MatrixXd A,
                            Eigen::MatrixXd x0, int ring_buffer_len, int n_state,
-                           int pool_size)
+                           int pool_size, int accumulator_count_thresh, double accumulator_time_thresh)
     : dt(dt), F(F), C(C), Q(Q), R(R), P(P), A(A),
       x0_template(x0), ring_buffer_len(ring_buffer_len), n_state(n_state), pool_size(pool_size)
 {
@@ -28,6 +28,11 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
     {
         KalmanFilter *kf = new KalmanFilter(dt, F, C, Q, R, P, A, x0_template, n_state, ring_buffer_len);
         kf->active = false;
+
+        //injest tunable threshholds
+        kf->accum_count_threshold = accumulator_count_thresh;
+        kf->accum_time_thresh = accumulator_time_thresh;
+        
         output_tracks.push_back(kf);
     }
     active_track_count_ = 0;

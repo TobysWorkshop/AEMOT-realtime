@@ -72,7 +72,7 @@ position_y_init: [408]
 lambda_init: 25
 
 accumulator_count_thresh : 8 # how many events do we batch before averaging to perform a single kalman update step?
-accumulator_time_thresh : 0.02 # how many seconds do we wait before we automatically trigger the above kalman update step (if we don't pool enough events in time)?
+accumulator_time_thresh : 0.002 # how many seconds do we wait before we automatically trigger the above kalman update step (if we don't pool enough events in time)?
 
 
 # comms

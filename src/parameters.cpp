@@ -47,6 +47,9 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.position_y_init = config["position_y_init"].as<std::vector<double>>();
     params.lambda_init = config["lambda_init"].as<double>();
 
+    params.accumulator_count_thresh = config["accumulator_count_thresh"].as<int>();
+    params.accumulator_time_thresh = config["accumulator_time_thresh"].as<double>();
+
     params.q_y = config["q_y"].as<double>();
     params.q_vx = config["q_vx"].as<double>();
     params.q_vy = config["q_vy"].as<double>();
