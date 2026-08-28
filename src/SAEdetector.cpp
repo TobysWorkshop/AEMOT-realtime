@@ -148,12 +148,12 @@ void SAEdetector::getPatches(Eigen::Vector4d e){
     }
 
     // small check to see if pixels in patch fired recently (removes prcoessing on background noise)
-    t_patch = SAE->getImage().block(y0, x0, m_ksize, m_ksize);
-    const double time_since_last_neighbor_event = m_t_current - t_patch.maxCoeff();
-    if (time_since_last_neighbor_event > m_recency_window) {
-        m_f_patch_status = false;
-        return; // isolated event, no recent nearby activity - treat as noise
-    }
+    //t_patch = SAE->getImage().block(y0, x0, m_ksize, m_ksize);
+    //const double time_since_last_neighbor_event = m_t_current - t_patch.maxCoeff();
+    //if (time_since_last_neighbor_event > m_recency_window) {
+    //    m_f_patch_status = false;
+    //    return; // isolated event, no recent nearby activity - treat as noise
+    //}
 
     // First get the initialised pixel patch to see if we should get the  others
     init_events_patch = initialised_events.block(y0, x0, m_ksize, m_ksize);

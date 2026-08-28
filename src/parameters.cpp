@@ -84,6 +84,8 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.use_dt_detector = config["use_dt_detector"] ? config["use_dt_detector"].as<int>() : 0;
     params.rate_per_area = config["rate_per_area"] ? config["rate_per_area"].as<double>() : 1.0;
 
+    params.show_display = config["show_display"].as<int>();
+
     return params;
 }
 

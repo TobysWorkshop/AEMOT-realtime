@@ -31,7 +31,7 @@ TrackManager::TrackManager(double dt, Eigen::MatrixXd F, Eigen::MatrixXd C,
 
         //injest tunable threshholds
         kf->accum_count_threshold = accumulator_count_thresh;
-        kf->accum_time_thresh = accumulator_time_thresh;
+        kf->accum_time_threshold = accumulator_time_thresh;
         
         output_tracks.push_back(kf);
     }
@@ -316,7 +316,12 @@ std::vector<int> TrackManager::evaluateDoubleTracks(){
                         Eigen::Vector2d v2_norm = x_hat_2.segment(2,3).normalized();
 
                         if ((v1_norm.transpose() * v2_norm) < 0.95){
-                            deleted_IDs_temp.push_back(i);
+                            bool i_validated = output_tracks[i]->validated;
+                            bool j_validated = output_tracks[j]->validated;
+                            // only mark i for deletion if it's NOT validated, or if BOTH are validated.
+                            if (!(i_validated && !j_validated)){
+                                deleted_IDs_temp.push_back(i);
+                            }
                         }                    
                     }
                 }

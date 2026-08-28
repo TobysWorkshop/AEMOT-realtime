@@ -78,6 +78,8 @@ struct Parameters
   int pool_size;
   int use_dt_detector;
   double rate_per_area;
+
+  int show_display;
 };
 
 struct DisplayParams

@@ -103,6 +103,9 @@ namespace processing {
         //detector type to use
         bool use_dt_detector = false;
 
+        //whether or not to show the display
+        bool show_display = true;
+
         // sticky/mru association cache for the most recently assigned tracks, for optimisation of nearest-neighbour association
         constexpr int MRU_SIZE = 3;
         int mru_slots[MRU_SIZE];
@@ -332,6 +335,9 @@ namespace processing {
         //assign the detector type to use
         use_dt_detector = static_cast<bool>(params.use_dt_detector);
 
+        //assign the show display flag
+        show_display = static_cast<bool>(params.show_display);
+
         // cache these once to avoid sqrt and power functions later - just compare to these squared values
         dist_threshold_sq = params.dist_threshold * params.dist_threshold;
         detector_dist_threshold_sq = params.detector_dist_threshold * params.detector_dist_threshold;
@@ -439,6 +445,10 @@ namespace processing {
     // called until setup() (above) has already returned true - reads
     // params/dispParams, which setup() is what populates.
     void render_setup() {
+        if (!show_display) {
+            std::cout << "Display disabled by config. Skipping window creation..." << std::endl;
+            return;
+        }
         cv::namedWindow("Video");
         cv::resizeWindow("Video", params.width, params.height);
         std::string output_video_path = input_event_path + "_video.avi";
@@ -479,7 +489,9 @@ namespace processing {
         if (writer.isOpened()) {
             writer.release();
         }
-        cv::destroyWindow("Video");
+        if (show_display) {
+            cv::destroyWindow("Video");
+        }
     }
 
 
@@ -522,8 +534,10 @@ namespace processing {
             }
             
             // update the reconstructed-image pixel this event touched
-            //AEMOT_TIMED_SCOPE("high_pass");
-            //high_pass(ts, c, r, p, params.alpha);
+            if (show_display){
+                AEMOT_TIMED_SCOPE("high_pass");
+                high_pass(ts, c, r, p, params.alpha);
+            }
 
             bool f_event_associated = false; // was this specific event matched to an existing track?
 
@@ -712,12 +726,12 @@ namespace processing {
 
             // PERIODIC DISPLAY REFRESH //
             // refresh at most once every 1/publish_framerate seconds of event time, on this same thread
-            //if (params.publish_framerate > 0 && ts > t_next_publish) {
-            //    AEMOT_TIMED_SCOPE("publish_frame");
-            //    //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
-            //    publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
-            //    t_next_publish = ts + (1.0 / params.publish_framerate);
-            //}
+            if (show_display && params.publish_framerate > 0 && ts > t_next_publish) {
+                AEMOT_TIMED_SCOPE("publish_frame");
+                //high_pass_global(ts, params.alpha); // COULD move this to the render thread too (currently on processing thread)
+                publish_frame(ts); // pass this off to the dedicated thread that handles all OpenCV GUI/video-writer calls, so we don't block the event-processing thread
+                t_next_publish = ts + (1.0 / params.publish_framerate);
+            }
         }
     }
 

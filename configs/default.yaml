@@ -19,8 +19,8 @@ ring_buffer_len: 10
 dist_threshold: 10 # radius for region around an object where events that flal inside it are associated to that object
 publish_framerate: 200
 
-contrast_threshold : 0.9 #0.1
-alpha: 5 #50
+contrast_threshold : 0.1 #0.1
+alpha: 50 #50
 m : 2 # Number of measurements
 dt: 0.0001
 n_state: 10 # Number of filter state
@@ -102,7 +102,7 @@ SAE_min_contributions         : 12
 SAE_min_detections_in_patch   : 40
 MAX_NUMBER_OF_TRACKS          : 100 #unused
 
-SAE_recency_window            : 0.010 # an event will be rejected from the SAE detector check if it has no other events in its patch that fired within this recent time window (in seconds)
+SAE_recency_window            : 0.005 # an event will be rejected from the SAE detector check if it has no other events in its patch that fired within this recent time window (in seconds)
 
 # Dt detection
 detector_dist_threshold       : 50        # distance from existing track to allow detection
@@ -120,3 +120,5 @@ event_rate_threshold          : 1000   # event rate required for validation
 pool_size : 20 # how many Kalman filters to keep in memory for reuse. This is to avoid the overhead of creating and destroying Kalman filters for each new track.
 use_dt_detector: 0 # 1 = use the dt detector, 0 = use the standard SAE detector.
 rate_per_area: 1.0 # factor to scale the event rate threshold based on the area of the blob (events/area). This allows larger blobs to have a higher threshold for activity, while smaller blobs can be validated with fewer events.
+
+show_display : 0 # 1 = show the display, 0 = don't show the display. SWITCH TO 0 FOR REAL_TIME OPPERATION!
