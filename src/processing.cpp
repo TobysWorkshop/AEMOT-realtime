@@ -603,6 +603,7 @@ namespace processing {
 
             // Kalman update and logging
             if (f_event_associated) {
+                AEMOT_TIMED_SCOPE("kalman_update_and_logging");
                 mru_touch(id); // remember this slot as most-recently-active
 
                 KalmanFilter* trk = track_manager->getTrackUnchecked(id);
@@ -674,11 +675,12 @@ namespace processing {
                         }
 
                         if (detector_output == 1){
+                            bool corroborated = false;
                             {
                                 AEMOT_TIMED_SCOPE("detection_corroboration");
                                 double lx_val, ly_val;
                                 detector->getLastDirection(c, r, lx_val, ly_val);
-                                const bool corroborated = corroboration_grid->check_and_update(c, r, ts, lx_val, ly_val);
+                                corroborated = corroboration_grid->check_and_update(c, r, ts, lx_val, ly_val);
                             }
                             
                             if (corroborated) {
