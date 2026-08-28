@@ -563,8 +563,10 @@ namespace processing {
                     int slot = mru_slots[k];
                     KalmanFilter* trk = track_manager->getTrackUnchecked(slot);
                     if (!trk->active) continue;
-                    const double dx = static_cast<double>(c) - trk->get_last_seen_x();
-                    const double dy = static_cast<double>(r) - trk->get_last_seen_y();
+                    double pred_x, pred_y;
+                    trk->predicted_position(ts, pred_x, pred_y);
+                    const double dx = static_cast<double>(c) - pred_x;
+                    const double dy = static_cast<double>(r) - pred_y;
                     const double d_sq = dx * dx + dy * dy;
                     if (d_sq < dist_threshold_sq) {
                         id = slot;

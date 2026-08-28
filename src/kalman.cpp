@@ -86,8 +86,6 @@ void KalmanFilter::init()
   accum_polarity_sum = 0;
   accum_count = 0;
   last_seen_ts = t0;
-  last_seen_x = 0.0;
-  last_seen_y = 0.0;
 }
 
 
@@ -130,9 +128,6 @@ void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
   accum_polarity_sum = 0;
   accum_count = 0;
   last_seen_ts = ts;
-  // last seen position seeded with the new track's spawn position
-  last_seen_x = x0_new(0, 0);
-  last_seen_y = x0_new(0, 1);
 
   f_equivalent_measurement_init = 0; // reset equivalent measurement initialization flag
   equiv_measurement_count = 0; // reset equivalent measurement count

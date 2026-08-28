@@ -127,6 +127,13 @@ public:
   inline double pos_x() const { return x_hat(0, 0); }
   inline double pos_y() const { return x_hat(0, 1); }
 
+  // constant-velocity forward prediction to an arbitrary timestamp 'ts'
+  inline void predicted_position(double ts, double& px, double& py) const {
+    const double dt_since_update = std::max(0.0, ts - ts_last[0]);
+    px = x_hat(0, 0) + x_hat(0, 2) * dt_since_update;
+    py = x_hat(0, 1) + x_hat(0, 3) * dt_since_update;
+  }
+
   // for logging purposes
   inline int getID() const { return track_id; } // returns the track's persistent unique ID
   inline const double* state_data() const { return x_hat.data(); } // easy fast way to access the kalman state data for logging
@@ -152,7 +159,7 @@ public:
   // lightweight last seen position
   double last_seen_x = 0.0;
   double last_seen_y = 0.0;
-  inline double get_last_seen_x() const { return last_sen_x; }
+  inline double get_last_seen_x() const { return last_seen_x; }
   inline double get_last_seen_y() const { return last_seen_y; }
 
   // Thresholds injected from outside
