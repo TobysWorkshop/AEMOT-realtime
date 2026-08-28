@@ -115,6 +115,10 @@ evaluate_dt_terminate         : 0.12     # time with no events before deleting
 evaluate_low_activity_factor  : 0.15     # factor of event rate threshold to delete track
 event_rate_threshold          : 1000   # event rate required for validation
 
+# Corroboration grid
+corroboration_cell_size : 15 #px - roughly your typical object size
+corroboration_window : 0.02 # seconds - how recent a neighbouring detection must be
+corroboration_direction_cos_threshold : 0.6 # looser than SAE_detection_threshold - a rough sanity check only
 
 # New parameters
 pool_size : 20 # how many Kalman filters to keep in memory for reuse. This is to avoid the overhead of creating and destroying Kalman filters for each new track.

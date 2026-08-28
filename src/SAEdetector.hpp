@@ -26,6 +26,11 @@ public:
     // Access the image
     const Eigen::MatrixXd& getImage() const;
 
+    void getLastDirection(int col, int row, double& lx_out, double& ly_out) const {
+        lx_out = lx(row, col);
+        ly_out = ly(row, col);
+    }
+
     //------------------------------------------//
     //-----        PUBLIC VARIABLES        -----//
     //------------------------------------------//

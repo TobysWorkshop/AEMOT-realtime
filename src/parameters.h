@@ -75,6 +75,11 @@ struct Parameters
   double evaluate_dt_terminate;
   double evaluate_low_activity_factor;
 
+  // corroboration grid
+  double corroboration_cell_size;
+  double corroboration_window;
+  double corroboration_direction_cos_threshold;
+
   int pool_size;
   int use_dt_detector;
   double rate_per_area;

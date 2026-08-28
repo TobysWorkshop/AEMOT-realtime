@@ -8,6 +8,7 @@
 #include "SAEdetector.hpp"  
 #include "track_logger.hpp"
 #include "track_summary_logger.hpp"
+#include "detection_corroboration.hpp"
 
 #include "profiler.hpp"
 
@@ -57,6 +58,7 @@ namespace processing {
         std::unique_ptr<SAEdetector> detector;
         std::unique_ptr<TrackLogger> track_logger;
         std::unique_ptr<TrackSummaryLogger> track_summary_logger;
+        std::unique_ptr<DetectionCorroborationGrid> corroboration_grid;
 
         frame_queue* frame_output = nullptr;
 
@@ -438,6 +440,14 @@ namespace processing {
         track_manager->setLogger(track_logger.get());
         track_manager->setSummaryLogger(track_summary_logger.get());
 
+        // SETUP THE CORROBORATOR //
+        corroboration_grid = std::make_unique<DetectionCorroborationGrid>(
+            params.width, params.height,
+            params.corroboration_cell_size,
+            params.corroboration_window,
+            params.corroboration_direction_cos_threshold
+        );
+
         return true;
     } // end setup()
 
@@ -615,7 +625,6 @@ namespace processing {
             
             if (!f_event_associated) // if the event hasn't been associated yet
             {   
-                //AEMOT_TIMED_SCOPE("detection");
                 if (use_dt_detector) { // dt_detector route
 
                     // add event to detector's stash
@@ -632,8 +641,11 @@ namespace processing {
                     }
 
                     if (detector_output_dt == 1) {
-                        NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
-                        mru_touch(new_trk.slot);
+                        const bool corroborated = corroboration_grid->check_and_update(c, r, ts, 0.0, 0.0);
+                        if (corroborated) {
+                            NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                            mru_touch(new_trk.slot);
+                        }
                     }
 
                 } else { // standard detector route
@@ -662,12 +674,22 @@ namespace processing {
                         }
 
                         if (detector_output == 1){
-                            AEMOT_TIMED_SCOPE("detection_createnewtrack");
-                            NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
-                            mru_touch(new_trk.slot);
+                            {
+                                AEMOT_TIMED_SCOPE("detection_corroboration");
+                                double lx_val, ly_val;
+                                detector->getLastDirection(c, r, lx_val, ly_val);
+                                const bool corroborated = corroboration_grid->check_and_update(c, r, ts, lx_val, ly_val);
+                            }
                             
-                            AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
-                                << " active=" << track_manager->activeCount() << "\n");
+                            if (corroborated) {
+                                AEMOT_TIMED_SCOPE("detection_createnewtrack");
+                                NewTrackResult new_trk = track_manager->createNewTrack({(double)c, (double)r, ts});
+                                mru_touch(new_trk.slot);
+                                
+                                AEMOT_LOG_INFO("[track] NEW track at (" << c << "," << r << ") ts=" << ts
+                                    << " active=" << track_manager->activeCount() << "\n");
+                            }
+
                         }
                         
                     }

@@ -79,7 +79,12 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.evaluate_dt_terminate = config["evaluate_dt_terminate"].as<double>();
     params.evaluate_low_activity_factor = config["evaluate_low_activity_factor"].as<double>();
 
-    //new
+    // corroboration grid
+    params.corroboration_cell_size = config["corroboration_cell_size"].as<double>();
+    params.corroboration_window = config["corroboration_window"].as<double>();
+    params.corroboration_direction_cos_threshold = config["corroboration_direction_cos_threshold"].as<double>();
+
+    //
     params.pool_size = config["pool_size"] ? config["pool_size"].as<int>() : 10;
     params.use_dt_detector = config["use_dt_detector"] ? config["use_dt_detector"].as<int>() : 0;
     params.rate_per_area = config["rate_per_area"] ? config["rate_per_area"].as<double>() : 1.0;
