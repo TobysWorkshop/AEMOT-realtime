@@ -86,6 +86,8 @@ void KalmanFilter::init()
   accum_polarity_sum = 0;
   accum_count = 0;
   last_seen_ts = t0;
+  last_seen_x = 0.0;
+  last_seen_y = 0.0;
 }
 
 
@@ -128,6 +130,9 @@ void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
   accum_polarity_sum = 0;
   accum_count = 0;
   last_seen_ts = ts;
+  // last seen position seeded with the new track's spawn position
+  last_seen_x = x0_new(0, 0);
+  last_seen_y = x0_new(0, 1);
 
   f_equivalent_measurement_init = 0; // reset equivalent measurement initialization flag
   equiv_measurement_count = 0; // reset equivalent measurement count
@@ -185,8 +190,9 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
   //------------------------------------------------//
   //------------------------------------------------//
-  double dt_alpha = 0.95;
-  dt_moving_avg = (dt_alpha) * dt_moving_avg + (1-dt_alpha) * dt;
+  // this below is now handled in kalman.hpp for batch kalman updating
+  //double dt_alpha = 0.95;
+  //dt_moving_avg = (dt_alpha) * dt_moving_avg + (1-dt_alpha) * dt;
 
   ts_last[id] = e(2);
 
@@ -197,8 +203,6 @@ void KalmanFilter::update(const Eigen::Vector3d &e, int id, int p)
   //------------------------------------------------//
   //-----              PREDICTION              -----//
   //------------------------------------------------//
-
-  // NOTE: CHANGE THESE TO FIXED SIZE ARRAYS!
 
   // Propagate updated state (predict and update)
   x_hat = (F * x_hat.transpose()).transpose();

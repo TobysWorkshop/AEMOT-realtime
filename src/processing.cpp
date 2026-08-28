@@ -563,8 +563,8 @@ namespace processing {
                     int slot = mru_slots[k];
                     KalmanFilter* trk = track_manager->getTrackUnchecked(slot);
                     if (!trk->active) continue;
-                    const double dx = static_cast<double>(c) - trk->pos_x();
-                    const double dy = static_cast<double>(r) - trk->pos_y();
+                    const double dx = static_cast<double>(c) - trk->get_last_seen_x();
+                    const double dy = static_cast<double>(r) - trk->get_last_seen_y();
                     const double d_sq = dx * dx + dy * dy;
                     if (d_sq < dist_threshold_sq) {
                         id = slot;
@@ -588,8 +588,8 @@ namespace processing {
                     KalmanFilter* trk = track_manager->getTrackUnchecked(i);
                     // if the track isn't active (just a waiting container), skip it
                     if (!trk->active) continue;
-                    const double dx = static_cast<double>(c) - trk->pos_x();
-                    const double dy = static_cast<double>(r) - trk->pos_y();
+                    const double dx = static_cast<double>(c) - trk->get_last_seen_x();
+                    const double dy = static_cast<double>(r) - trk->get_last_seen_y();
                     const double d_sq = dx * dx + dy * dy;
                     
                     if (d_sq < dist_min_sq)

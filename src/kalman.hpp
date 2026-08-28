@@ -145,20 +145,19 @@ public:
   double accum_latest_ts = 0.0;         // ts of the most recent accumulated event
   double accum_window_start_ts = 0.0;   // ts of the first event in the current window
 
-  // Lightweight "last seen" timestamp - updated on EVERY associated event
-  // immediately, independent of ts_last (which only advances when
-  // update() actually runs). evaluateTracks()'s inactivity check must use
-  // this instead of get_ts_last(), or a track sitting mid-accumulation-
-  // window would look "inactive" and get deleted even though it's seeing
-  // events right now.
+  // Lightweight "last seen" timestamp - updated on EVERY associated event immediately, independent of ts_last
   double last_seen_ts = 0.0;
   inline double get_last_seen_ts() const { return last_seen_ts; }
 
-  // Thresholds injected from outside (mirrors how dist_threshold is set
-  // via update_distance_threshold()) - keeps KalmanFilter decoupled from
-  // Parameters/YAML.
-  int accum_count_threshold = 8;      // tune against your real event rate
-  double accum_time_threshold  = 0.002;  // seconds; tune likewise
+  // lightweight last seen position
+  double last_seen_x = 0.0;
+  double last_seen_y = 0.0;
+  inline double get_last_seen_x() const { return last_sen_x; }
+  inline double get_last_seen_y() const { return last_seen_y; }
+
+  // Thresholds injected from outside
+  int accum_count_threshold = 8;
+  double accum_time_threshold  = 0.002;  // seconds
   inline void update_accumulator_thresholds(int count_thresh, double time_thresh) {
     accum_count_threshold = count_thresh;
     accum_time_threshold = time_thresh;
@@ -174,7 +173,15 @@ public:
     accum_polarity_sum += (p > 0) ? 1 : -1;
     accum_count += 1;
     accum_latest_ts = ts;
+    
+    if (last_seen_ts > 0.0) {
+      const double raw_dt = ts - last_seen_ts;
+      const double dt_alpha = 0.95;
+      dt_moving_avg = dt_alpha * dt_moving_avg + (1 - dt_alpha) * raw_dt;
+    }
     last_seen_ts = ts;
+    last_seen_x = x;
+    last_seen_y = y;
 
     return (accum_count >= accum_count_threshold) || (ts - accum_window_start_ts >= accum_time_threshold);
   }
