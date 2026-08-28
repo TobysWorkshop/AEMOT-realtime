@@ -30,7 +30,7 @@ public:
                  Eigen::MatrixXd Q, Eigen::MatrixXd R,
                  Eigen::MatrixXd P, Eigen::MatrixXd A,
                  Eigen::MatrixXd x0, int ring_buffer_len, int n_state, 
-                 int pool_size);
+                 int pool_size, int accumulator_count_thresh, double accumulator_time_thresh);
 
     // Add track to output
     NewTrackResult createNewTrack(Eigen::Vector<double,3> new_point);

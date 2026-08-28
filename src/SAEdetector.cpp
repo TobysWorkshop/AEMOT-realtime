@@ -7,7 +7,7 @@
 #include "parameters.h"
 
 // SAEdetector::SAEdetector(const Parameters &params)
-SAEdetector::SAEdetector(int height, int width, int ksize, double alpha, double min_contributions, double min_active_pixels, double detection_threshold, double dt_detection_threshold)
+SAEdetector::SAEdetector(int height, int width, int ksize, double alpha, double min_contributions, double min_active_pixels, double detection_threshold, double dt_detection_threshold, double recency_window)
 {
     // Update properties from configuration file
     m_width = width;
@@ -19,6 +19,7 @@ SAEdetector::SAEdetector(int height, int width, int ksize, double alpha, double 
     m_min_active_pixels = min_active_pixels;
 
     m_dt_detection_threshold = dt_detection_threshold;
+    m_recency_window = recency_window;
 
 
     // Initialise the SAE 
@@ -123,7 +124,7 @@ int SAEdetector::performDetection_dt(Eigen::Vector4d e){
     }
 }
 
-Eigen::MatrixXd SAEdetector::getImage() {
+const Eigen::MatrixXd& SAEdetector::getImage() const {
     return SAE->getImage();
 }
 
@@ -144,6 +145,14 @@ void SAEdetector::getPatches(Eigen::Vector4d e){
     if (x0 < 0 || x1 >= m_width || y0 < 0 || y1 >= m_height){
         m_f_patch_status = false;
         return;
+    }
+
+    // small check to see if pixels in patch fired recently (removes prcoessing on background noise)
+    t_patch = SAE->getImage().block(y0, x0, m_ksize, m_ksize);
+    const double time_since_last_neighbor_event = m_t_current - t_patch.maxCoeff();
+    if (time_since_last_neighbor_event > m_recency_window) {
+        m_f_patch_status = false;
+        return; // isolated event, no recent nearby activity - treat as noise
     }
 
     // First get the initialised pixel patch to see if we should get the  others

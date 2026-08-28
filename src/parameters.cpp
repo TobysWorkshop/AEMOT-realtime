@@ -64,6 +64,8 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.SAE_min_active_pixels = config["SAE_min_active_pixels"].as<double>();
     params.MAX_NUMBER_OF_TRACKS = config["MAX_NUMBER_OF_TRACKS"].as<int>();
 
+    params.SAE_recency_window = config["SAE_recency_window"].as<double>();
+
     params.event_rate_threshold = config["event_rate_threshold"].as<double>();
     params.f_show_candidates = config["f_show_candidates"].as<int>();
     params.f_evaluate = config["f_evaluate"].as<int>();

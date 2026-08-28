@@ -11,7 +11,7 @@ class SAEdetector
 public:
     // Constructor and initialisation
     // SAEdetector(const Parameters& params);
-    SAEdetector(int height, int width, int ksize, double alpha, double min_contributions, double min_active_pixels, double detection_threshold, double dt_detection_threshold);
+    SAEdetector(int height, int width, int ksize, double alpha, double min_contributions, double min_active_pixels, double detection_threshold, double dt_detection_threshold, double recency_window);
 
     // SAEdetector(Parameters &params); 
     SAEdetector();
@@ -24,7 +24,7 @@ public:
 
 
     // Access the image
-    Eigen::MatrixXd getImage();
+    const Eigen::MatrixXd& getImage() const;
 
     //------------------------------------------//
     //-----        PUBLIC VARIABLES        -----//
@@ -57,6 +57,7 @@ private:
     double m_detection_threshold = 0.7;
     int m_ksize;
     double m_dt_detection_threshold = 0;
+    double m_recency_window = 0.010; // in seconds (0.010 = 10ms)
 
     //----- Flags -----//
     bool m_f_patch_status = false;

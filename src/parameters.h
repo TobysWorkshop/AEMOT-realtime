@@ -52,6 +52,9 @@ struct Parameters
   double lambda_init;
   int select_target_flag;
 
+  int accumulator_count_thresh;
+  double accumulator_time_thresh;
+
   // Parameters for detector
   int SAE_operation_rate;
   int SAE_ksize;
@@ -61,6 +64,7 @@ struct Parameters
   double SAE_detection_threshold;
   double SAE_min_active_pixels;
   int MAX_NUMBER_OF_TRACKS;
+  double SAE_recency_window;
   double event_rate_threshold;
   int f_show_candidates;
   int f_evaluate;

@@ -71,6 +71,9 @@ position_x_init: [328]
 position_y_init: [408]
 lambda_init: 25
 
+accumulator_count_thresh : 8 # how many events do we batch before averaging to perform a single kalman update step?
+accumulator_time_thresh : 0.02 # how many seconds do we wait before we automatically trigger the above kalman update step (if we don't pool enough events in time)?
+
 
 # comms
 comms_range: 10
@@ -98,6 +101,8 @@ SAE_min_active_pixels         : 10
 SAE_min_contributions         : 12
 SAE_min_detections_in_patch   : 40
 MAX_NUMBER_OF_TRACKS          : 100 #unused
+
+SAE_recency_window            : 0.010 # an event will be rejected from the SAE detector check if it has no other events in its patch that fired within this recent time window (in seconds)
 
 # Dt detection
 detector_dist_threshold       : 50        # distance from existing track to allow detection

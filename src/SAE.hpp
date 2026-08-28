@@ -15,7 +15,7 @@ public:
     // Add event to SAE
     void addEvent(Eigen::Vector4d e);
     // Access the image
-    Eigen::MatrixXd getImage() const {return SAEimage;};
+    inline const Eigen::MatrixXd& getImage() const { return SAEimage; };
 
     //------------------------------------------//
     //-----        PUBLIC VARIABLES        -----//

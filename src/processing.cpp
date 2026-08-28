@@ -375,7 +375,8 @@ namespace processing {
             params.SAE_min_contributions,
             params.SAE_min_active_pixels,
             params.SAE_detection_threshold,
-            params.detector_dt_threshold
+            params.detector_dt_threshold,
+            params.SAE_recency_window
         );
 
         // BUILD THE KALMAN FILTER MATRIX TEMPLATES //
@@ -420,7 +421,7 @@ namespace processing {
         }
 
         // SETUP THE TRACK MANAGER //
-        track_manager = std::make_unique<TrackManager>(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state, params.pool_size);
+        track_manager = std::make_unique<TrackManager>(params.dt, F, C, Q, R, P, A, x0, params.ring_buffer_len, n_state, params.pool_size, params.accumulator_count_thresh, params.accumulator_time_thresh);
         track_manager->update_default_dist_threshold(params.dist_threshold);
         track_manager->update_frame_dimensions(params.height, params.width);
         track_manager->update_event_rate_threshold(params.event_rate_threshold);
