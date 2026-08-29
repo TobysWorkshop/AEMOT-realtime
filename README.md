@@ -190,4 +190,13 @@ Note that multiple bits can be set, e.g. a track can be both out of frame AND in
 
 <p align="right"><a href="#top">↑ go back to top</a></p>
 
+## Understanding the Config File
+WIP...
+
+<p align="right"><a href="#top">↑ go back to top</a></p>
+
+## Running the Included Offline Track Plotting/Verification
+WIP...
+
+<p align="right"><a href="#top">↑ go back to top</a></p>
 
