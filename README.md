@@ -1,3 +1,5 @@
+<a name="top"></a>
+
 # Real-time 'Asynchronous Multi-Object Tracking with an Event Camera' (AEMOT) with Neuromorphic Drivers
 
 > Now in real-time!
@@ -14,6 +16,12 @@ You can see the original full AEMOT code on GitHub above. The exact, reduced, co
 
 ***Currently only works with the Prophesee Gen4 EVK4 event camera!***
 
+## Quick Links!
+[![How to install and build](https://img.shields.io/badge/How%20to%20Install%20and%20Build-BD9048?style=for-the-badge)](#how-to-install-and-build)  
+[![How to use the system](https://img.shields.io/badge/How%20to%20use%20the%20system-4A3A31?style=for-the-badge)](#how-to-use)  
+[![How logging tracks to file works](https://img.shields.io/badge/How%20logging%20tracks%20to%20file%20works-A66F38?style=for-the-badge)](#logging-tracks-to-file)
+
+<p align="right"><a href="#top">↑ go back to top</a></p>
 
 ## How to install and build
 ***<ins>Enviornment note:</ins>*** This set up has been designed and tested for an Ubuntu setup (tested on Ubuntu 26.04, but a solid earlier version like Ubuntu 24.04 will likely work even better). Running on Windows is probably possible, but you will need to consult the gen4 page on how to build their drivers with Windows (not covered on this page, Ubuntu is assumed here).
@@ -94,6 +102,8 @@ Now everything is ready to use!
 ***<ins>Notes on different setups:</ins>*** This exact sister-folder setup is required because some of the C++ files in this project have hard-coded references to include required files from the gen4 directory. If you'd like to alter the file arrangements, or even merge this project code with the required gen4 files, then you will need to update these `#include` references.  
 NOTE: the above has now been changed to rely on the includes in the CMakelists.txt, rather than hard-coded #includes in the individual .cpp files.
 
+<p align="right"><a href="#top">↑ go back to top</a></p>
+
 ## How to use
 This project provides two ways of running the system: <ins>realtime streaming from a gen4 camera</ins>, and <ins>replaying from a .es file</ins>.
 
@@ -120,8 +130,13 @@ Where `<config_name>` follows the same requirements as above, and `<.es_file_loc
 ./build/aemot_replay <config_name> ./data/<file_name>.es
 ```
 
-## Logging tracks to a file
-The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.
+<p align="right"><a href="#top">↑ go back to top</a></p>
+
+## Logging tracks to file
+The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.  
+The system will also create a custom ***.beesum (Binary Event Evolution Summary) file***. This contains a single summary log per validated track, which holds some key metrics about that track, including why it ended, as well as the covariance at its endpoint.
+
+Upon starting a run, a pair of .bees and .beesum files for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>.bees` and `<DD-MM-YYYY-hh-mm-ss>.bees`, respectedly.
 
 ### <ins>.bees File Format:</ins>
 
@@ -129,16 +144,50 @@ The system has a built-in ability to log every validated track's kalman state at
 | -------- | -------- | -------- | -------- |
 | **<ins>Header (24 bytes)</ins>** |
 | Magic bytes  | char[8] | "A E M O T L O G"  | 8  |
-| version | uint32 | 1 | 4 |
-| n_state | uint32 | 10, *length of each track update's state vector* | 4 |
-| record_size | uint32 | *total number of track update entries in the file* | 4 |
+| version | uint32 | 2 | 4 |
+| n_state | uint32 | 8, *length of each track update's state vector* | 4 |
+| record_size | uint32 | 80, *the size of one track update log* | 4 |
 | reserved | uint32 | 0 | 4 |
-| **<ins>Kalman log record (96 bytes), repeated</ins>** |
+| **<ins>Kalman log record (80 bytes), repeated</ins>** |
 | track_id | uint64 | *unique id of the track this update belongs to* | 8 |
 | ts | double | time | 8 |
-| Kalman filter state vector, *x_hat[10]* | double | x, y, vx, vy, lambda1, lambda2, theta, q, reserved1, reserved2 | 80 |
+| Kalman filter state vector, *x_hat[8]* | double | x, y, vx, vy, lambda1, lambda2, theta, q | 64 |
 | **. . .** |
 
-Upon starting a run, a .bees file for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>_kalman_logs.bees`.
+### <ins>.beesum File Format:</ins>
+
+| Item | Type | Value | Bytes |
+| -------- | -------- | -------- | -------- |
+| **<ins>Header (24 bytes)</ins>** |
+| Magic bytes  | char[8] | "A E M O T S U M"  | 8  |
+| version | uint32 | 2 | 4 |
+| state_dim | uint32 | 8, *length of each track update's state vector* | 4 |
+| record_size | uint32 | 624, *the size of one track summary record* | 4 |
+| reserved | uint32 | 0 | 4 |
+| **<ins>Track summary record (624 bytes), repeated</ins>** |
+| track_id | uint64 | *unique id of the track this update belongs to* | 8 |
+| t_created | double | *time this track was first created* | 8 |
+| t_validated | double | *time this track was validated* | 8 |
+| t_deleted | double | *time this track ended* | 8 |
+| num_records | uint32 | *how many induvidual logs this track has in the .bees file* | 4 |
+| delete_reason | uint32 | *6-option bitmask, why was the track deleted? (see table below)* | 4 |
+| event_rate_at_deletion | double | *1.0 / dt_moving_average at the time the track ended* | 8 |
+| x_hat_at_deletion[8] | double | *Kalman state vector when the track ended:* x, y, vx, vy, lambda1, lambda2, theta, q | 64 |
+| P_at_deletion[64] | double | *row major, symmetric, flattened P matrix when the track ended* | 512 |
+| **. . .** |
+
+### <ins>Deletion Reason Bitmask *(for the relevant .beesum file parameter - see above)*:</ins>
+| Reason | Bitmask |
+| -------- | -------- |
+| OUT_OF_FRAME | 1u << 0 |
+| INACTIVE | 1u << 1 |
+| LOW_ACTIVITY | 1u << 2 |
+| BAD_SHAPE | 1u << 3 |
+| DUPLICATE_TRACK | 1u << 4 |
+| STILL_ACTIVE_AT_SHUTDOWN | 1u << 5 |
+
+Note that multiple bits can be set, e.g. a track can be both out of frame AND inactive simultaneously. This just logs whatever checks failed when this track was deleted. The *STILL_ACTIVE_AT_SHUTDOWN* means that the track was still active when the system shut down.
+
+<p align="right"><a href="#top">↑ go back to top</a></p>
 
 
