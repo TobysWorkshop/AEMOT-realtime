@@ -136,7 +136,7 @@ Where `<config_name>` follows the same requirements as above, and `<.es_file_loc
 The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.  
 The system will also create a custom ***.beesum (Binary Event Evolution Summary) file***. This contains a single summary log per validated track, which holds some key metrics about that track, including why it ended, as well as the covariance at its endpoint.
 
-Upon starting a run, a pair of .bees and .beesum files for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>.bees` and `<DD-MM-YYYY-hh-mm-ss>.bees`, respectedly.
+Upon starting a run, a pair of .bees and .beesum files for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>.bees` and `<DD-MM-YYYY-hh-mm-ss>.beesum`, respectedly.
 
 ### <ins>.bees File Format:</ins>
 
