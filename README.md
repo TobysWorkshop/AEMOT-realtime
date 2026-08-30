@@ -4,6 +4,8 @@
 
 > Now in real-time!
 
+![system diagram dark mode](system_dark.png)
+
 ### <ins>Built with:</ins>
 [![AEMOT by Angus Apps et al](https://img.shields.io/badge/AEMOT%20by%20Angus%20Apps%20et%20al.-BD9048?style=for-the-badge)](https://github.com/angus-apps/AEMOT)  
 [![Gen4 Neuromorphic Drivers](https://img.shields.io/badge/Gen4%20Neuromorphic%20Drivers-A66F38?style=for-the-badge)](https://github.com/neuromorphicsystems/gen4)
