@@ -19,7 +19,7 @@ This is currently a work in progress.
 
 This package takes the core of a reduced version of the AEMOT code (developed by Angus Apps, Ziwei Wang, Vladimir Perejogin, Timothy L. Molloy, and Robert Mahony) and configures it for real-time event data input and tracking using Neuromorphic System's Gen4 C++ Neuromorphic Drivers.
 
-You can see the original full AEMOT code on GitHub below. The exact, reduced, code that this package here was based on was provided directly by one of the original authors, and is not publically accessible at the time of writing this.
+You can see the original full AEMOT code on GitHub below. The exact, reduced, code that this package here was based on was provided directly by one of the original authors, and is not publicly accessible at the time of writing this.
 
 ***Currently only works with the Prophesee Gen4 EVK4 event camera!***
 
@@ -143,7 +143,7 @@ Where `<config_name>` follows the same requirements as above, and `<.es_file_loc
 The system has a built-in ability to log every validated track's kalman state at each update instance to a custom ***.bees (Binary Event Evolution Storage) file***. This is done by default while the system is running in real-time or replaying from a file.  
 The system will also create a custom ***.beesum (Binary Event Evolution Summary) file***. This contains a single summary log per validated track, which holds some key metrics about that track, including why it ended, as well as the covariance at its endpoint.
 
-Upon starting a run, a pair of .bees and .beesum files for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>.bees` and `<DD-MM-YYYY-hh-mm-ss>.beesum`, respectedly.
+Upon starting a run, a pair of .bees and .beesum files for that run will be created in the `aemot_realtime/track_logs/` folder with a timestamped file name: `<DD-MM-YYYY-hh-mm-ss>.bees` and `<DD-MM-YYYY-hh-mm-ss>.beesum`, respectively.
 
 ### <ins>.bees File Format:</ins>
 
@@ -153,7 +153,7 @@ Upon starting a run, a pair of .bees and .beesum files for that run will be crea
 | Magic bytes  | char[8] | "A E M O T L O G"  | 8  |
 | version | uint32 | 2 | 4 |
 | n_state | uint32 | 8, *length of each track update's state vector* | 4 |
-| record_size | uint32 | 80, *the size of one track update log* | 4 |
+| record_size | uint32 | 80, *the size of one kalman log record* | 4 |
 | reserved | uint32 | 0 | 4 |
 | **<ins>Kalman log record (80 bytes), repeated</ins>** |
 | track_id | uint64 | *unique id of the track this update belongs to* | 8 |
@@ -176,7 +176,7 @@ Upon starting a run, a pair of .bees and .beesum files for that run will be crea
 | t_created | double | *time this track was first created* | 8 |
 | t_validated | double | *time this track was validated* | 8 |
 | t_deleted | double | *time this track ended* | 8 |
-| num_records | uint32 | *how many induvidual logs this track has in the .bees file* | 4 |
+| num_records | uint32 | *how many individual logs this track has in the .bees file* | 4 |
 | delete_reason | uint32 | *6-option bitmask, why was the track deleted? (see table below)* | 4 |
 | event_rate_at_deletion | double | *1.0 / dt_moving_average at the time the track ended* | 8 |
 | x_hat_at_deletion[8] | double | *Kalman state vector when the track ended:* x, y, vx, vy, lambda1, lambda2, theta, q | 64 |
