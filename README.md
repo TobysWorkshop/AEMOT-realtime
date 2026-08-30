@@ -4,7 +4,8 @@
 
 > Now in real-time!
 
-![system diagram dark mode](system_dark.png)
+![system diagram dark mode](system_dark.png)  
+*If you're using light mode, the above system diagram might be hard to see. If so, check out [this light-mode-friendly version](system_light.png) instead :)*
 
 ## Quick Links!
 [![How to install and build](https://img.shields.io/badge/How%20to%20Install%20and%20Build-BD9048?style=for-the-badge)](#how-to-install-and-build)  
