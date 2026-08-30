@@ -6,22 +6,27 @@
 
 ![system diagram dark mode](system_dark.png)
 
-### <ins>Built with:</ins>
-[![AEMOT by Angus Apps et al](https://img.shields.io/badge/AEMOT%20by%20Angus%20Apps%20et%20al.-BD9048?style=for-the-badge)](https://github.com/angus-apps/AEMOT)  
-[![Gen4 Neuromorphic Drivers](https://img.shields.io/badge/Gen4%20Neuromorphic%20Drivers-A66F38?style=for-the-badge)](https://github.com/neuromorphicsystems/gen4)
+## Quick Links!
+[![How to install and build](https://img.shields.io/badge/How%20to%20Install%20and%20Build-BD9048?style=for-the-badge)](#how-to-install-and-build)  
+[![How to use the system](https://img.shields.io/badge/How%20to%20use%20the%20system-4A3A31?style=for-the-badge)](#how-to-use)  
+[![How logging tracks to file works](https://img.shields.io/badge/How%20logging%20tracks%20to%20file%20works-A66F38?style=for-the-badge)](#logging-tracks-to-file)
+
+## About
+
+### ***For academic use only!***
 
 This is currently a work in progress.
 
 This package takes the core of a reduced version of the AEMOT code (developed by Angus Apps, Ziwei Wang, Vladimir Perejogin, Timothy L. Molloy, and Robert Mahony) and configures it for real-time event data input and tracking using Neuromorphic System's Gen4 C++ Neuromorphic Drivers.
 
-You can see the original full AEMOT code on GitHub above. The exact, reduced, code that this package here was based on was provided directly by one of the original authors, and is not publically accessible at the time of writing this.
+You can see the original full AEMOT code on GitHub below. The exact, reduced, code that this package here was based on was provided directly by one of the original authors, and is not publically accessible at the time of writing this.
 
 ***Currently only works with the Prophesee Gen4 EVK4 event camera!***
 
-## Quick Links!
-[![How to install and build](https://img.shields.io/badge/How%20to%20Install%20and%20Build-BD9048?style=for-the-badge)](#how-to-install-and-build)  
-[![How to use the system](https://img.shields.io/badge/How%20to%20use%20the%20system-4A3A31?style=for-the-badge)](#how-to-use)  
-[![How logging tracks to file works](https://img.shields.io/badge/How%20logging%20tracks%20to%20file%20works-A66F38?style=for-the-badge)](#logging-tracks-to-file)
+### <ins>Built with:</ins>
+[![AEMOT by Angus Apps et al](https://img.shields.io/badge/AEMOT%20by%20Angus%20Apps%20et%20al.-BD9048?style=for-the-badge)](https://github.com/angus-apps/AEMOT)  
+[![Gen4 Neuromorphic Drivers](https://img.shields.io/badge/Gen4%20Neuromorphic%20Drivers-A66F38?style=for-the-badge)](https://github.com/neuromorphicsystems/gen4)
+
 
 <p align="right"><a href="#top">↑ go back to top</a></p>
 
@@ -201,4 +206,7 @@ WIP...
 WIP...
 
 <p align="right"><a href="#top">↑ go back to top</a></p>
+
+## Other notes
+System diagram at the top of this README was made using [Excalidraw](https://excalidraw.com). See their GitHub page [HERE](https://github.com/excalidraw/excalidraw) for more info.
 
