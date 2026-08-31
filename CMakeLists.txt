@@ -17,6 +17,12 @@ endif()
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
+if(NOT TARGET yaml-cpp::yaml-cpp) # fallback for other versions (this was needed in the past on some devices)
+    add_library(yaml-cpp::yaml-cpp INTERFACE IMPORTED)
+    target_include_directories(yaml-cpp::yaml-cpp INTERFACE ${YAML_CPP_INCLUDE_DIR})
+    target_link_libraries(yaml-cpp::yaml-cpp INTERFACE ${YAML_CPP_LIBRARIES})
+endif()
+
 find_package(Threads REQUIRED)
 
 find_package(PkgConfig REQUIRED)
@@ -34,7 +40,6 @@ set(SHARED_SOURCES
     src/kalman.cpp
     src/SAEdetector.cpp
     src/decoding.cpp
-    src/parameters_decoding.cpp
     src/parameters.cpp
     src/SAE.cpp
     src/track_logger.cpp

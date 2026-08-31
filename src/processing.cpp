@@ -53,7 +53,6 @@ namespace processing {
 
         // ---- run configuration / state ----
         Parameters params;
-        DisplayParams dispParams;
         std::unique_ptr<TrackManager> track_manager;
         std::unique_ptr<SAEdetector> detector;
         std::unique_ptr<TrackLogger> track_logger;
@@ -63,15 +62,12 @@ namespace processing {
         frame_queue* frame_output = nullptr;
 
         // ---- display / video output ----
-        cv::VideoWriter writer_ref, writer;
-        std::string output_image_path;
         int image_count = 0;
         double t_next_publish = 0.0;
 
         // ---- reconstructed-image accumulators ----
         cv::Mat log_intensity_state, ts_array;
         double contrast_threshold = 0.0;
-        bool use_gyro_flag = false;
         // Buffer of events sharing a timestamp (cleared on track deletion).
         std::queue<std::pair<int, std::pair<int, int>>> same_ts_e_buffer;
 
@@ -99,8 +95,6 @@ namespace processing {
         // ---- Kalman filter matrix templates ----
         // built once in setup() then handed to TrackManager (which makes its own per-track copies)
         Eigen::MatrixXd F, C, R, P, Q, A, x0;
-
-        std::string input_event_path;
 
         //detector type to use
         bool use_dt_detector = false;
@@ -252,7 +246,7 @@ namespace processing {
             }
 
             // Uncertainty (covariance) ellipse
-            if (dispParams.disp_covariance_flag) {
+            if (params.disp_covariance_flag) {
                 if (!std::isnan(P_track(0, 0)) && !std::isnan(P_track(1, 1)) &&
                     !std::isinf(P_track(0, 0)) && !std::isinf(P_track(1, 1))) {
                     
@@ -292,14 +286,6 @@ namespace processing {
             return true; // signal to the caller that we want to exit
         }
  
-        // --- Save outputs ---
-        if (params.save_video_flag && writer.isOpened()) {
-            writer.write(cimg);
-        }
-        if (dispParams.save_image_flag) {
-            std::string output_image_name = output_image_path + "/image" + std::to_string(image_count) + ".png";
-            cv::imwrite(output_image_name, cimg);
-        }
         image_count += 1;
         return false; // signal to the caller that we want to continue
     }
@@ -320,7 +306,6 @@ namespace processing {
                 throw std::runtime_error("config file not found: " + file_config_path.string());
             }
             params = loadParametersFromYAML(file_config_path.string());
-            dispParams = loadDispParametersFromYAML(file_config_path.string());
         } catch (const std::exception &ex) {
             std::cerr << "Error: " << ex.what() << std::endl;
             return false; // Fail fast if config is missing/invalid
@@ -329,10 +314,8 @@ namespace processing {
         // Allocate the two per-pixel accumulator images used for the event->intensity reconstruction.
         log_intensity_state = cv::Mat::zeros(params.height, params.width, CV_64FC1);
         ts_array = cv::Mat::zeros(params.height, params.width, CV_64FC1);
-        use_gyro_flag = params.use_gyro_flag;
         contrast_threshold = params.contrast_threshold;
         int n_state = params.n_state;
-        input_event_path = params.input_folder_path + params.input_data_name; // base path (no extension) for this dataset
 
         //assign the detector type to use
         use_dt_detector = static_cast<bool>(params.use_dt_detector);
@@ -453,7 +436,7 @@ namespace processing {
 
     // Runs once, before the first frame, on the RENDER thread. Must not be
     // called until setup() (above) has already returned true - reads
-    // params/dispParams, which setup() is what populates.
+    // params, which setup() is what populates.
     void render_setup() {
         if (!show_display) {
             std::cout << "Display disabled by config. Skipping window creation..." << std::endl;
@@ -461,31 +444,6 @@ namespace processing {
         }
         cv::namedWindow("Video");
         cv::resizeWindow("Video", params.width, params.height);
-        std::string output_video_path = input_event_path + "_video.avi";
-        if (params.save_video_flag) {
-            // Prefer a codec/backend that works on Ubuntu without GStreamer drama
-            int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
-            writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
- 
-            if (!writer.isOpened()) {
-                // fallback
-                fourcc = cv::VideoWriter::fourcc('X', 'V', 'I', 'D');
-                writer.open(output_video_path, fourcc, 30.0, cv::Size(params.width, params.height), true);
-            }
-            if (!writer.isOpened()) {
-                std::cerr << "ERROR: could not open VideoWriter for " << output_video_path << std::endl;
-                params.save_video_flag = false; // only ever touched from this thread - see the NOTE by its declaration
-            } else {
-                std::cerr << "VideoWriter opened: " << output_video_path << std::endl;
-            }
-        }
- 
-        // If saving individual frame images was requested, create the output folder.
-        if (params.save_image_flag) {
-            std::filesystem::path path(input_event_path + "/output_img");
-            std::filesystem::create_directories(path);
-            output_image_path = path.string();
-        }
  
         // RENDER INITIAL EMPTY FRAME //
         frame_job empty_job;
@@ -496,9 +454,6 @@ namespace processing {
  
     // Runs once, on the render thread, after the frame_queue is stopped and drained.
     void render_teardown() {
-        if (writer.isOpened()) {
-            writer.release();
-        }
         if (show_display) {
             cv::destroyWindow("Video");
         }
@@ -662,8 +617,8 @@ namespace processing {
                         detector->addEvent({(double)c, (double)r, ts, (double)p});
                         detection_event_count++;
                     }
-
-                    // check if the SAE detector has returned a positive detection, and if so, whether we should start a new track
+                    
+                    // if we're able to perform an SAE detection, then do it
                     if ((track_manager->hasAvailableSlot()) &
                         (dist_min_sq > detector_dist_threshold_sq || track_manager->activeCount() == 0) &
                         (detection_event_count > params.SAE_operation_rate)) 
@@ -675,7 +630,8 @@ namespace processing {
                             AEMOT_TIMED_SCOPE("detection_performdetection");
                             detector_output = detector->performDetection({(double)c, (double)r, ts, (double)p});
                         }
-
+                        
+                        // check if the detector returned a positive result
                         if (detector_output == 1){
                             bool corroborated = false;
                             {
@@ -762,10 +718,6 @@ namespace processing {
     }
 
     void teardown() {
-        if (writer.isOpened()) {
-            writer.release();
-        }
-
         // write out any summaries for tracks that are still alive at teardown
         if (track_manager) {
             track_manager->flushAllSummaries();

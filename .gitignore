@@ -11,3 +11,5 @@ build/
 *.bees
 *.beesum
 *.png
+
+__pycache__
