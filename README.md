@@ -199,7 +199,126 @@ Note that multiple bits can be set, e.g. a track can be both out of frame AND in
 <p align="right"><a href="#top">↑ go back to top</a></p>
 
 ## Understanding the Config File
-WIP...
+A .yaml config file is required to run this system. This carries a whole bunch of tunable parameters that change how the system functions - from altering the Kalman filter setup, to how track evaluation is performed, and even whether frames are rendered for user viewing.
+
+Below is the `default.yaml` file, which is included in this repository (it can be found at [/configs/default.yaml](/configs/default.yaml).
+
+Many of these parameters do not need to be changed. However, some notable ones include (in order of appearance):
+* ***show_display*** and ***save_files***: set these to 0 and 1, respectively, for standard system performance. Having show_display on will massively reduce processing speeds, and is unfit for any meaningful realtime usage (but good for replaying from files when speed is not an issue).
+* ***pool_size***: increasing this allows for more objects to be tracked at once, but will also reduce some performance.
+* ***use_dt_detector***: the SAEdetector.cpp has two detector types. By default, the standard SAE detector is used. The dt detector has not yet been fully tested with this realtime setup.
+* ***dist_threshold***: set this with your expected scene and objects in mind. This realtime version of AEMOT does not use an automatically adjusting distance threshold, and instead uses this as a hard gate.
+* ***publish_framerate***: if using the display, set this to control how frequently the display updates. Making this larger will allow you to diagnose how tracking is performing, but will massively slow down the system (see above on show_display).
+* ***accumulator_count_thresh*** and ***accumulator_time_thresh***: this realtime version of AEMOT uses batched kalman updates to speed up the system and reduce the size of the output files. Increasing these parameters will mean we perform a kalman update less often. This will speed up the system and will produce fewer logs in the .bees file (a log is written every kalman update), but may reduce the accuracy of the tracking (the cobject's centroid gets smeared more the longer we wait for a batched kalman update).
+* ***corroboration_cell_size*** and ***corroboration_window***: this realtime version of AEMOT uses a corroboration grid to further gate what events get to trigger new track creation. Simply put, when an event triggers a positive SAE detection, it will only be allowed to create a new track if another positive detection has occurred recently in its grid cell. Decreasing both of these parameters makes it much harder for events to spawn new tracks, and will greatly reduce the ability for background noise to consume candidate tracks.
+
+```yaml
+## -------------------------- ##
+## AEMOT_realtime config file ##
+## -------------------------- ##
+
+## General ##
+# ---------------- #
+width: 1281 # width (in pixels) of the camera's sensor + 1
+height: 721 # height (in pixels) of the camera's sensor + 1
+
+dt: 0.0001  # time step to be used throughout calculations
+
+show_display : 0 # 1 = show the display, 0 = don't show the display. SWITCH TO 0 FOR REAL_TIME OPPERATION!
+save_files : 1 # 1 = save .bees and .beesum files, 0 = don't save these files
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+## Track Manager ##
+# ---------------- #
+pool_size : 20 # how many Kalman filters to set up at the start and hold in a lineup for reuse. 
+use_dt_detector: 0 # 1 = use the dt detector, 0 = use the standard SAE detector.
+dist_threshold: 10 # radius for region around an object where events that fall inside it are associated to that object (used in the nearest neighbour calculations in the main processing.cpp loop)
+ring_buffer_len: 10
+
+# Track evaluation
+f_evaluate                    : 1       # 1 = standard track evaluation, 0 = only end tracks when they exit the frame
+evaluate_ts_age               : 0.08    # how long (in seconds) to wait before allowing a young track to be evaluated (to let it get some events and initialise)
+evaluate_dt_terminate         : 0.12    # time (in seconds) we allow a track to have no events before deleting 
+rate_per_area                 : 1.0     # factor to scale the event rate threshold based on the area of the blob (events/area). This allows larger blobs to have a higher threshold for activity, while smaller blobs can be validated with fewer events.
+event_rate_threshold          : 1000    # event rate required for validation
+evaluate_low_activity_factor  : 0.15    # factor of event rate threshold to delete track
+### the required event-rate that a track must meet = rate_per_area * (the blob's width * height), clamped to a min of event_rate_threshold * evaluate_low_activity_factor
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+## Renderer, high-pass, and display ##
+# ---------------- #
+publish_framerate: 200 # how often do we publish a frame to the display (frames/second)
+contrast_threshold : 0.1 # controls how much an event darkens its pixel in the rendered frame
+alpha: 50 # controls how fast rendered events decay on the frame (get lighter and eventually fade)
+
+f_show_candidates   : 1 # 1 = display candidate tracks in blue (alongside the usual validated tracks in red) on the rendered frame, 0 = just display the validated tracks
+disp_covariance_flag: 0 # 1 = display covariance regions on the rendered frame, 0 = don't display covariance
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+## Kalman Filters ##
+# ---------------- #
+n_state: 10 # size of the kalman state vector
+
+# Initial size param (sets both initial lambda_1 and lambda_2)
+lambda_init: 25
+
+# Initial covariance values
+var_x: 30
+var_y: 30   
+var_vx: 50000 #was: 8000
+var_vy: 50000 #was: 8000
+var_lambda_1: 5
+var_lambda_2: 5
+var_theta: 0.5
+var_q: 2
+
+# Diagonal process noise values
+q_x: 5000
+q_y: 5000
+q_vx: 40000
+q_vy: 40000
+q_lambda_1: 0.1
+q_lambda_2: 0.1
+q_theta: 0.005
+q_q: 0.01
+
+# Batch Kalman Accumulators
+accumulator_count_thresh : 8 # how many events do we batch before averaging to perform a single kalman update step?
+accumulator_time_thresh : 0.002 # how many seconds do we wait before we automatically trigger the above kalman update step (if we don't pool enough events in time)?
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+## SAE detector ##
+# ---------------- #
+SAE_operation_rate            : 1   # how many events between each SAE detection. 1 is recommended for the current setup, as this produces the best tracking results
+
+detector_dist_threshold       : 50  # distance from existing track to allow even making a detection in the first place
+
+SAE_ksize                     : 7
+SAE_alpha                     : 3
+SAE_detection_threshold       : 0.9 # val = cos(theta). Check the note below on corroboration_direction_cos_threshold, as these should be loosely coupled
+SAE_min_active_pixels         : 10
+SAE_min_contributions         : 12
+
+SAE_recency_window            : -1  # an event will be rejected from the SAE detector check if it has no other events in its patch that fired within this recent time window (in seconds)
+### set the above recency window to a NEGATIVE NUMBER if you don't want to use this check - it will be ignored.
+
+# for dt detection:
+detector_dt_threshold         : 0.001 # maximum dt in sae patch around new event to make a detection
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+
+## Corroboration grid ##
+# ---------------- #
+corroboration_cell_size : 5 # pixels - set this to roughly your typical object size. A positive detection must find another recent detection in its own cell to create a new track
+corroboration_window : 0.002 # how recent a neighbouring detection must be to allow creating a new track (in seconds)
+corroboration_direction_cos_threshold : 0.6 # set this to be looser than SAE_detection_threshold in the SAE section above - a rough sanity check only
+# ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
+
+```
 
 <p align="right"><a href="#top">↑ go back to top</a></p>
 
