@@ -330,26 +330,30 @@ namespace processing {
         deleted_IDs_scratch.reserve(8);
 
         // TrackLogger //
-        // Create a unique filename for the log file based on the current timestamp
-        auto const now = std::chrono::system_clock::now();
-        std::time_t const now_time_t = std::chrono::system_clock::to_time_t(now);
-        // Convert to local time safely
-        std::tm local_tm;
-        #if defined(_WIN32)
-            localtime_s(&local_tm, &now_time_t);
-        #else
-            localtime_r(&now_time_t, &local_tm); // Thread-safe POSIX alternative
-        #endif
-        std::stringstream ss;
-        ss << std::put_time(&local_tm, "%d-%m-%Y-%H-%M-%S");
-        std::string formatted = ss.str();
-
-        try {
-            track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + ".bees"); // Binary Event Evolution Storage
-            track_summary_logger = std::make_unique<TrackSummaryLogger>("./track_logs/" + formatted + ".beesum"); // Binary Event Evolution Summary
-        } catch (const std::exception &ex) {
-            std::cerr << "Error: " << ex.what() << std::endl;
-            return false;
+        if (params.save_files) {
+            // Create a unique filename for the log file based on the current timestamp
+            auto const now = std::chrono::system_clock::now();
+            std::time_t const now_time_t = std::chrono::system_clock::to_time_t(now);
+            // Convert to local time safely
+            std::tm local_tm;
+            #if defined(_WIN32)
+                localtime_s(&local_tm, &now_time_t);
+            #else
+                localtime_r(&now_time_t, &local_tm); // Thread-safe POSIX alternative
+            #endif
+            std::stringstream ss;
+            ss << std::put_time(&local_tm, "%d-%m-%Y-%H-%M-%S");
+            std::string formatted = ss.str();
+        
+            try {
+                track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + ".bees"); // Binary Event Evolution Storage
+                track_summary_logger = std::make_unique<TrackSummaryLogger>("./track_logs/" + formatted + ".beesum"); // Binary Event Evolution Summary
+            } catch (const std::exception &ex) {
+                std::cerr << "Error: " << ex.what() << std::endl;
+                return false;
+            }
+        } else {
+            std::cerr << "Logging to file disabled by config. Skipping file creation..." << std::endl;
         }
 
         // NOTE: display window / video writer / output-image-folder setup
@@ -420,7 +424,7 @@ namespace processing {
         track_manager->store_parameters(
             params.evaluate_ts_age, params.evaluate_dt_terminate, params.evaluate_low_activity_factor
         );
-        track_manager->setLogger(track_logger.get());
+        track_manager->setLogger(track_logger.get(), params.save_files);
         track_manager->setSummaryLogger(track_summary_logger.get());
 
         // SETUP THE CORROBORATOR //

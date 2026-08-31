@@ -70,9 +70,10 @@ void TrackManager::store_parameters(double ts_age, double dt_terminate, double l
     this->evaluate_low_activity_factor = low_activity_factor;
 }
 
-void TrackManager::setLogger(TrackLogger* logger)
+void TrackManager::setLogger(TrackLogger* logger, bool save_files)
 {
     logger_ = logger;
+    this->save_files = save_files;
 }
 void TrackManager::setSummaryLogger(TrackSummaryLogger* summary_logger)
 {
@@ -154,25 +155,26 @@ NewTrackResult TrackManager::createNewTrack(Eigen::Vector<double,3> new_point)
             kf->active = true;
             active_track_count_++;
 
-            // logging: clear out any leftover backlog from whatever track used this slot last
-            log_backlogs_[i].clear();
-            log_counts_[i] = 0;
-            t_validated_[i] = -1.0;
-
             //debug
             //std::cerr << "[new] slot=" << i
             //            << " xy=(" << new_point(0) << "," << new_point(1) << ")"
             //            << " t0=" << new_point(2)
             //            << " activeCount=" << activeCount() << std::endl;
 
-            if (f_decode){
-                kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
-            }
+            //if (f_decode){
+            //    kf->initialiseDecoder(decoder_dt, decoder_data_name, decoder_input_event_path, decoder_contrast_threshold, next_unique_id);
+            //}
 
             next_unique_id++;
 
-            // Log this track's initial state - buffered until (if) it validates.
-            logTrackUpdate(i, new_point(2), kf->state_data());
+            if (save_files) {
+                // logging: clear out any leftover backlog from whatever track used this slot last
+                log_backlogs_[i].clear();
+                log_counts_[i] = 0;
+                t_validated_[i] = -1.0;
+                // Log this track's initial state - buffered until (if) it validates.
+                logTrackUpdate(i, new_point(2), kf->state_data());
+            }
 
             return {kf, i}; // stop after filling one inactive slot
         }
@@ -244,13 +246,15 @@ std::vector<int> TrackManager::evaluateTracks(double ts_now){
             if (rate_ok && kf->validated == 0) {
                 kf->validated = 1;
                 kf->openOutputFile();
-                if (f_decode){
-                   output_tracks[i]->decoder->open_G_file();
-                }
+                //if (f_decode){
+                //   output_tracks[i]->decoder->open_G_file();
+                //}
 
                 // Logging: track just got promoted - write out everything in its buffer and then log straight through from now on
-                flushBacklog(i);
-                recordValidationTime(i, ts_now);
+                if (save_files) {
+                    flushBacklog(i);
+                    recordValidationTime(i, ts_now);
+                }
             }
         }
     }
@@ -347,21 +351,21 @@ int TrackManager::activeCount()
 //************************************************************************************//
 //**********                         COMMUNICATION                          **********//
 //************************************************************************************//
-void TrackManager::initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold)
-{
-    for (int id = 0; id < output_tracks.size(); id++)
-    {
-        output_tracks[id]->initialiseDecoder(dt, data_name, input_event_path, contrast_threshold, id);
-    }
-}
+//void TrackManager::initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold)
+//{
+//    for (int id = 0; id < output_tracks.size(); id++)
+//    {
+//        output_tracks[id]->initialiseDecoder(dt, data_name, input_event_path, contrast_threshold, id);
+//    }
+//}
 
-void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::string input_event_path, double contrast_threshold)
-{
-    decoder_dt = dt;
-    decoder_data_name = data_name;
-    decoder_input_event_path = input_event_path;
-    decoder_contrast_threshold = contrast_threshold;
-}
+//void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::string input_event_path, double contrast_threshold)
+//{
+//    decoder_dt = dt;
+//    decoder_data_name = data_name;
+//    decoder_input_event_path = input_event_path;
+//    decoder_contrast_threshold = contrast_threshold;
+//}
 
 
 //************************************************************************************//
@@ -370,6 +374,7 @@ void TrackManager::storeDecodeVariables(double dt, std::string data_name, std::s
 void TrackManager::logTrackUpdate(int slot, double ts, const double* x_hat_data)
 {
     if (!logger_) return; // logging not wired up - nothing to do
+    if (!save_files) return; // logging disabled - nothing to do
 
     KalmanFilter* kf = output_tracks[slot];
 
@@ -395,6 +400,9 @@ void TrackManager::flushBacklog(int slot)
         log_backlogs_[slot].clear();
         return;
     }
+    if (!save_files) {
+        return;
+    }
 
     auto& backlog = log_backlogs_[slot];
     for (const auto& rec : backlog) {
@@ -406,12 +414,14 @@ void TrackManager::flushBacklog(int slot)
 // for track summary logging
 void TrackManager::recordValidationTime(int slot, double ts_now)
 {
+    if(!save_files) return;
     t_validated_[slot] = ts_now;
 }
 
 void TrackManager::writeSummary(int slot, uint32_t delete_reason)
 {
     if (!summary_logger_) return;
+    if (!save_files) return;
 
     KalmanFilter* kf = output_tracks[slot];
 
@@ -441,6 +451,8 @@ void TrackManager::writeSummary(int slot, uint32_t delete_reason)
 
 void TrackManager::flushAllSummaries()
 {
+    if (!save_files) return;
+
     for (int i = 0; i < static_cast<int>(output_tracks.size()); ++i) {
         if (output_tracks[i]->active && output_tracks[i]->validated) {
             writeSummary(i, TrackDeleteReason::STILL_ACTIVE_AT_SHUTDOWN);
@@ -465,8 +477,10 @@ void TrackManager::deleteTrack(std::vector<KalmanFilter *> &track_array, int tra
         active_track_count_--;
 
         // logging: clear out this track's log
-        log_backlogs_[track_id].clear();
-        log_counts_[track_id] = 0;
-        t_validated_[track_id] = -1.0;
+        if (save_files) {
+            log_backlogs_[track_id].clear();
+            log_counts_[track_id] = 0;
+            t_validated_[track_id] = -1.0;
+        }
     }
 }

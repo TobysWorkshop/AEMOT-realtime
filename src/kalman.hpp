@@ -17,8 +17,6 @@
 #include <iostream>
 #pragma once
 
-#include "decoding.hpp"
-
 class KalmanFilter
 {
 
@@ -91,10 +89,10 @@ public:
 
   void reset(const Eigen::MatrixXd &x0_new, double ts);
 
-  void initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id);
+  //void initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id);
 
   // Comms
-  Decoding *decoder;
+  //Decoding *decoder;
 
   /**
    * Return the current state and time.

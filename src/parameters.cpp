@@ -11,7 +11,7 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.height = config["height"].as<int>();
     params.dt = config["dt"].as<double>();
     params.show_display = config["show_display"].as<int>();
-    params.save_files = config["save_files"].as<ins>();
+    params.save_files = config["save_files"].as<int>();
 
 
     // Track Manager

@@ -10,7 +10,7 @@ struct Parameters
   int height;
   double dt;
   int show_display;
-  int show_display;
+  int save_files;
 
   // Track Manager
   int pool_size;

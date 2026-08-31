@@ -24,7 +24,7 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
   I.setIdentity();
   x_hat = x0;
 
-  decoder = nullptr; //instanciate this here
+  //decoder = nullptr; //instanciate this here
 
   // Important for re-init different targets
   ts_last.clear();
@@ -47,7 +47,7 @@ KalmanFilter::KalmanFilter(double dt, const Eigen::MatrixXd &F, const Eigen::Mat
 KalmanFilter::KalmanFilter() {}
 
 KalmanFilter::~KalmanFilter(){
-  delete decoder;
+  //delete decoder;
 }
 
 void KalmanFilter::init(double t0, std::string input_folder_name)
@@ -106,11 +106,11 @@ void KalmanFilter::openOutputFile(){ // HACK : comment these lines to stop files
 }
 
 
-void KalmanFilter::initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id)
-{
-  delete decoder; // Delete any existing decoder to avoid memory leaks
-  decoder = new Decoding(dt, data_name, input_event_path, contrast_threshold, id);
-}
+//void KalmanFilter::initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold, int id)
+//{
+//  delete decoder; // Delete any existing decoder to avoid memory leaks
+//  decoder = new Decoding(dt, data_name, input_event_path, contrast_threshold, id);
+//}
 
 void KalmanFilter::reset(const Eigen::MatrixXd &x0_new, double ts)
 {

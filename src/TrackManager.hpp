@@ -41,7 +41,7 @@ public:
     std::vector<int> evaluateDoubleTracks();
 
     // Initialise Decoding
-    void initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold);
+    //void initialiseDecoder(double dt, std::string data_name, std::string input_event_path, double contrast_threshold);
 
     // Access the track objects
     std::vector<KalmanFilter *> getTracks();
@@ -61,8 +61,8 @@ public:
 
     void store_parameters(double ts_age, double dt_terminate, double low_activity_factor);
 
-    void setDecodeFlag(bool flag){f_decode = flag;};
-    void storeDecodeVariables(double dt, std::string data_name, std::string input_event_path, double contrast_threshold);
+    //void setDecodeFlag(bool flag){f_decode = flag;};
+    //void storeDecodeVariables(double dt, std::string data_name, std::string input_event_path, double contrast_threshold);
 
     std::vector<int> getValidTrackIds();
 
@@ -71,7 +71,7 @@ public:
     inline KalmanFilter* getTrackUnchecked(int id) { return output_tracks[id]; }
 
     //logging
-    void setLogger(TrackLogger* logger);
+    void setLogger(TrackLogger* logger, bool save_files);
     void logTrackUpdate(int slot, double ts, const double* x_hat_data);
 
     void setSummaryLogger(TrackSummaryLogger* summary_logger);
@@ -117,11 +117,13 @@ private:
 
     int next_unique_id = 0; 
 
-    bool f_decode = 0;
-    double decoder_dt;
-    std::string decoder_data_name;
-    std::string decoder_input_event_path;
-    double decoder_contrast_threshold;
+    bool save_files = true;
+
+    //bool f_decode = 0;
+    //double decoder_dt;
+    //std::string decoder_data_name;
+    //std::string decoder_input_event_path;
+    //double decoder_contrast_threshold;
 
     double evaluate_ts_age;
     double evaluate_dt_terminate;

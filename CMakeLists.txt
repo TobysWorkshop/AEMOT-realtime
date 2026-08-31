@@ -39,7 +39,6 @@ set(SHARED_SOURCES
     src/TrackManager.cpp
     src/kalman.cpp
     src/SAEdetector.cpp
-    src/decoding.cpp
     src/parameters.cpp
     src/SAE.cpp
     src/track_logger.cpp
