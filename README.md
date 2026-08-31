@@ -10,7 +10,8 @@
 ## Quick Links!
 [![How to install and build](https://img.shields.io/badge/How%20to%20Install%20and%20Build-BD9048?style=for-the-badge)](#how-to-install-and-build)  
 [![How to use the system](https://img.shields.io/badge/How%20to%20use%20the%20system-4A3A31?style=for-the-badge)](#how-to-use)  
-[![How logging tracks to file works](https://img.shields.io/badge/How%20logging%20tracks%20to%20file%20works-A66F38?style=for-the-badge)](#logging-tracks-to-file)
+[![How logging tracks to file works](https://img.shields.io/badge/How%20logging%20tracks%20to%20file%20works-A66F38?style=for-the-badge)](#logging-tracks-to-file)  
+[![Understanding the config file](https://img.shields.io/badge/Understanding%20the%20config%20file-4A3A31?style=for-the-badge)](#understanding-the-config-file) 
 
 ## About
 
