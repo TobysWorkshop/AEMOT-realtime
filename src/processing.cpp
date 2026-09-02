@@ -578,13 +578,14 @@ namespace processing {
                 AEMOT_TIMED_SCOPE("kalman_update_and_logging");
                 mru_touch(id); // remember this slot as most-recently-active
 
+                KalmanFilter* trk = track_manager->getTrackUnchecked(id);
+                
                 // raw event logging if requested via config
                 if (raw_event_logger) {
-                    raw_event_logger->log(ts, c, r, p);
+                    raw_event_logger->log(ts, c, r, p, trk->getID());
                 }
                 // --
-
-                KalmanFilter* trk = track_manager->getTrackUnchecked(id);
+                
                 const bool should_flush = trk->accumulate_event(c, r, ts, p);
 
                 if (should_flush) {
