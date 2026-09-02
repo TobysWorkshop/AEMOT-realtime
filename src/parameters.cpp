@@ -12,6 +12,7 @@ Parameters loadParametersFromYAML(const std::string &yaml_file_path)
     params.dt = config["dt"].as<double>();
     params.show_display = config["show_display"].as<int>();
     params.save_files = config["save_files"].as<int>();
+    params.create_event_log_file = config["create_event_log_file"].as<int>();
 
 
     // Track Manager

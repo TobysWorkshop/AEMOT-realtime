@@ -11,6 +11,7 @@ struct Parameters
   double dt;
   int show_display;
   int save_files;
+  int create_event_log_file;
 
   // Track Manager
   int pool_size;

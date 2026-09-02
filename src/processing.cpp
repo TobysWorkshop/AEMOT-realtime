@@ -9,6 +9,7 @@
 #include "track_logger.hpp"
 #include "track_summary_logger.hpp"
 #include "detection_corroboration.hpp"
+#include "raw_event_logger.hpp"
 
 #include "profiler.hpp"
 
@@ -58,6 +59,7 @@ namespace processing {
         std::unique_ptr<TrackLogger> track_logger;
         std::unique_ptr<TrackSummaryLogger> track_summary_logger;
         std::unique_ptr<DetectionCorroborationGrid> corroboration_grid;
+        std::unique_ptr<RawEventLogger> raw_event_logger;
 
         frame_queue* frame_output = nullptr;
 
@@ -82,8 +84,6 @@ namespace processing {
         double detection_event_count = 0.0;
         int double_track_evaluation_counter = 0;
         int full_evaluation_counter = 0;
-        bool f_associated_this_ts = false;
-        bool f_write_position = false;
         Eigen::Vector3d e;              // event measurement, packed as (x, y, ts) each iteration
 
         std::vector<int> deleted_IDs_scratch;
@@ -435,6 +435,17 @@ namespace processing {
             params.corroboration_direction_cos_threshold
         );
 
+        // Set up the raw event logger if set in params //
+        if (params.create_event_log_file) {
+            try {
+                raw_event_logger = std::make_unique<RawEventLogger>(
+                    "./track_logs/" + formatted + ".aemotevt");
+            } catch (const std::exception &ex) {
+                std::cerr << "Error: " << ex.what() << std::endl;
+                return false;
+            }
+        }
+
         return true;
     } // end setup()
 
@@ -566,6 +577,12 @@ namespace processing {
             if (f_event_associated) {
                 AEMOT_TIMED_SCOPE("kalman_update_and_logging");
                 mru_touch(id); // remember this slot as most-recently-active
+
+                // raw event logging if requested via config
+                if (raw_event_logger) {
+                    raw_event_logger->log(ts, c, r, p);
+                }
+                // --
 
                 KalmanFilter* trk = track_manager->getTrackUnchecked(id);
                 const bool should_flush = trk->accumulate_event(c, r, ts, p);
@@ -733,6 +750,9 @@ namespace processing {
         }
         if (track_summary_logger) {
             track_summary_logger->close();
+        }
+        if (raw_event_logger) {
+            raw_event_logger->close();
         }
 
         Profiler::instance().report();
