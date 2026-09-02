@@ -349,11 +349,24 @@ namespace processing {
                 track_logger = std::make_unique<TrackLogger>("./track_logs/" + formatted + ".bees"); // Binary Event Evolution Storage
                 track_summary_logger = std::make_unique<TrackSummaryLogger>("./track_logs/" + formatted + ".beesum"); // Binary Event Evolution Summary
             } catch (const std::exception &ex) {
-                std::cerr << "Error: " << ex.what() << std::endl;
+                std::cout << "Error: " << ex.what() << std::endl;
                 return false;
             }
+
+            // Set up the raw event logger if set in params //
+            if (params.create_event_log_file) {
+                std::cout << "Raw event logging requested. Generating .aemotevt file alongside the standard files..." << std::endl;
+                try {
+                    raw_event_logger = std::make_unique<RawEventLogger>(
+                        "./track_logs/" + formatted + ".aemotevt");
+                } catch (const std::exception &ex) {
+                    std::cerr << "Error: " << ex.what() << std::endl;
+                    return false;
+                }
+            }
+
         } else {
-            std::cerr << "Logging to file disabled by config. Skipping file creation..." << std::endl;
+            std::cout << "Logging to file disabled by config. Skipping file creation..." << std::endl;
         }
 
         // NOTE: display window / video writer / output-image-folder setup
@@ -434,17 +447,6 @@ namespace processing {
             params.corroboration_window,
             params.corroboration_direction_cos_threshold
         );
-
-        // Set up the raw event logger if set in params //
-        if (params.create_event_log_file) {
-            try {
-                raw_event_logger = std::make_unique<RawEventLogger>(
-                    "./track_logs/" + formatted + ".aemotevt");
-            } catch (const std::exception &ex) {
-                std::cerr << "Error: " << ex.what() << std::endl;
-                return false;
-            }
-        }
 
         return true;
     } // end setup()

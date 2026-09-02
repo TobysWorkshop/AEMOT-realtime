@@ -43,6 +43,7 @@ set(SHARED_SOURCES
     src/SAE.cpp
     src/track_logger.cpp
     src/track_summary_logger.cpp
+    src/raw_event_logger.cpp
 )
 
 add_executable(aemot_realtime

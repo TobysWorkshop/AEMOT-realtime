@@ -18,7 +18,7 @@ struct RawEventRecord {
     uint32_t track_id;
     uint16_t x;
     uint16_t y;
-    uint16_t p; // 1 = ON, 0 = OFF
+    uint8_t p; // 1 = ON, 0 = OFF
     uint8_t reserved[7] = {0, 0, 0, 0, 0, 0, 0};
 };
 
