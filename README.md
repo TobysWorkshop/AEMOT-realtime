@@ -199,6 +199,40 @@ Note that multiple bits can be set, e.g. a track can be both out of frame AND in
 
 <p align="right"><a href="#top">↑ go back to top</a></p>
 
+### <ins>Optional additional file type: associated event-level logging *(.aemotevt)*</ins>
+This system also has the additional capability of logging at the event-level, rather than the kalman state. This can be activated by setting the config variable `create_event_log_file` to 1 (this is set to 0 by default - see the section below on the config file).  
+When activated, a separate ***.aemotevt (AEMOT event) file*** will be created alongside the standard .bees and .beesum files. The .aemotevt file contains logs of each event that was successfully associated to a track during the nearest-neighbour data association step. The file is formatted as follows:
+
+| Item | Type | Value | Bytes |
+| -------- | -------- | -------- | -------- |
+| **<ins>Header (24 bytes)</ins>** |
+| Magic bytes  | char[8] | "A E M O T E V T"  | 8  |
+| version | uint32 | 1 | 4 |
+| reserved | uint32 | 0 | 4 |
+| record_size | uint32 | 24, *the size of one event log record* | 4 |
+| reserved | uint32 | 0 | 4 |
+| **<ins>Event log record (24 bytes), repeated</ins>** |
+| t | double | *time* | 8 |
+| track_id | uint32 | *unique id of the track this update belongs to* | 4 |
+| x | uint16 | *pixel x-position* | 2 |
+| y | uint16 | *pixel y-position* | 2 |
+| p | uint8 | *polarity: 1 = ON, 0 = OFF* | 1 |
+| reserved[7] | uint8 | {0, 0, 0, 0, 0, 0, 0} | 7 |
+| **. . .** |
+
+While this is a custom binary file format, a python converter script has been included (see [track_logs/aemotevt_to_es.py](track_logs/aemotevt_to_es.py)), which will convert an ***.aemotevt*** file to a ***.es*** file.  
+Since the system saves the .aemotevt file in the track_logs/ folder by default, the script can be run as follows:
+```bash
+# from the aemot_realtime folder:
+python3 ./track_logs/aemot_to_es.py <file_name>
+# by default, this will save the converted file to track_logs/<file_name>.es (the same base file name as the input file)
+# optional extra arguments:
+python3 ./track_logs/aemot_to_es.py <file_name> --output <custom file name> --width <custom sensor width> --height <custom sensor height>
+# Setting a custom output name will save the file to track_logs/<custom file name>.es
+```
+
+<p align="right"><a href="#top">↑ go back to top</a></p>
+
 ## Understanding the Config File
 A .yaml config file is required to run this system. This carries a whole bunch of tunable parameters that change how the system functions - from altering the Kalman filter setup, to how track evaluation is performed, and even whether frames are rendered for user viewing.
 
