@@ -11,5 +11,6 @@ build/
 *.bees
 *.beesum
 *.png
+*.aemotevt
 
 __pycache__
